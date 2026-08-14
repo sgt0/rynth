@@ -19,7 +19,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["maturin>=1.14.1,<2", "vapoursynth>=79"]
+requires = ["maturin>=1.14.1,<2"]
 build-backend = "maturin"
 
 [tool.basedpyright]
@@ -44,7 +44,6 @@ line-ending = "lf"
 [tool.uv]
 cache-keys = [
     { file = "src/**/*.rs" },
-    { file = "build.rs" },
     { file = "Cargo.lock" },
     { file = "Cargo.toml" },
     { file = "pyproject.toml" },
