@@ -1,0 +1,19 @@
+/target
+/.devenv
+/.direnv
+/.venv
+__pycache__/
+*.so
+/dist
+/stubs
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

@@ -1,0 +1,51 @@
+[project]
+name = "rynth"
+version = "0.0.0"
+description = "Python bindings for VapourSynth."
+readme = "README.md"
+license = "EUPL-1.2"
+license-files = ["LICENSE.txt"]
+requires-python = ">=3.12"
+
+dependencies = ["vapoursynth>=79"]
+
+[dependency-groups]
+dev = [
+    "maturin==1.14.1",
+    "mypy==2.3.0",
+    "numpy==2.5.2",
+    "pytest==9.1.1",
+    "ruff==0.16.3",
+]
+
+[build-system]
+requires = ["maturin>=1.14.1,<2", "vapoursynth>=79"]
+build-backend = "maturin"
+
+[tool.basedpyright]
+stubPath = "stubs"
+
+[tool.maturin]
+module-name = "rynth"
+auditwheel = "skip"
+
+[tool.maturin.generate-ci.github]
+trusted-publishing = true
+publishing-environment = "pypi"
+pytest = true
+zig = true
+
+[tool.ruff]
+extend-exclude = ["stubs"]
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.uv]
+cache-keys = [
+    { file = "src/**/*.rs" },
+    { file = "build.rs" },
+    { file = "Cargo.lock" },
+    { file = "Cargo.toml" },
+    { file = "pyproject.toml" },
+]
