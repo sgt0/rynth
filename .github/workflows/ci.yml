@@ -44,11 +44,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          uv venv .venv
-          source .venv/bin/activate
+          uv sync --frozen --no-install-project
           uv pip install rynth --no-index --no-deps --find-links dist --reinstall
-          uv pip install rynth pytest
-          pytest
+          uv run --no-sync pytest
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -80,12 +78,11 @@ jobs:
         run: |
           set -e
           docker run --rm -v ${{ github.workspace }}:/io -w /io alpine:latest sh -c '
-            apk add py3-pip py3-virtualenv
-            python3 -m virtualenv .venv
-            source .venv/bin/activate
-            pip install rynth --no-index --no-deps --find-links dist --force-reinstall
-            pip install rynth pytest
-            pytest
+            set -e
+            apk add uv
+            uv sync --frozen --no-install-project
+            uv pip install rynth --no-index --no-deps --find-links dist --reinstall
+            uv run --no-sync pytest
           '
 
   windows:
@@ -118,11 +115,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          uv venv .venv
-          source .venv/Scripts/activate
+          uv sync --frozen --no-install-project
           uv pip install rynth --no-index --no-deps --find-links dist --reinstall
-          uv pip install rynth pytest
-          pytest
+          uv run --no-sync pytest
 
   macos:
     runs-on: ${{ matrix.platform.runner }}
@@ -153,11 +148,9 @@ jobs:
       - name: pytest
         run: |
           set -e
-          uv venv .venv
-          source .venv/bin/activate
+          uv sync --frozen --no-install-project
           uv pip install rynth --no-index --no-deps --find-links dist --reinstall
-          uv pip install rynth pytest
-          pytest
+          uv run --no-sync pytest
 
   sdist:
     runs-on: ubuntu-latest
