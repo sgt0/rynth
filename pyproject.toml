@@ -35,6 +35,14 @@ publishing-environment = "pypi"
 pytest = true
 zig = true
 
+[tool.maturin.target.x86_64-apple-darwin]
+# VapourSynth's minimum macOS target is 13.0.
+macos-deployment-target = "13.0"
+
+[tool.maturin.target.aarch64-apple-darwin]
+# VapourSynth's minimum macOS target is 13.0.
+macos-deployment-target = "13.0"
+
 [tool.ruff]
 extend-exclude = ["stubs"]
 

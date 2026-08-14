@@ -25,8 +25,6 @@ pyo3 = {
         "abi3-py313",
         "abi3-py314",
         "abi3-py315",
-        "abi3t",
-        "abi3t-py315",
         "auto-initialize",
         "py-clone",
         "parking_lot",
