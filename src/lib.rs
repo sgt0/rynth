@@ -4,6 +4,7 @@ mod api;
 mod convert;
 mod core;
 mod enums;
+mod environment;
 mod frame;
 mod node;
 mod plugin;
@@ -19,6 +20,16 @@ mod rynth {
   use crate::core::{PyCore, PyCoreProxy};
   #[pymodule_export]
   use crate::enums::{ColorFamily, SampleType};
+  #[pymodule_export]
+  use crate::environment::{
+    Environment, EnvironmentPolicy, EnvironmentPolicyAPI, StandaloneEnvironmentPolicy,
+    VideoOutputTuple,
+  };
+  #[pymodule_export]
+  use crate::environment::{
+    clear_output, clear_outputs, clear_policy, get_current_environment, get_output, get_outputs,
+    has_policy, register_policy,
+  };
   #[pymodule_export]
   use crate::frame::{PyVideoFormat, PyVideoFrame};
   #[pymodule_export]

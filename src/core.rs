@@ -1,7 +1,7 @@
 //! The `Core` pyclass and the lazy `core` proxy.
 
 use std::ffi::CString;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
@@ -133,22 +133,9 @@ impl PyCore {
   }
 }
 
-/// Backing singleton for `rynth.core`.
-static GLOBAL_CORE: OnceLock<Py<PyCore>> = OnceLock::new();
-
 /// A lazy proxy for the current environment's core.
 #[pyclass(name = "CoreProxy", frozen)]
 pub(crate) struct PyCoreProxy;
-
-impl PyCoreProxy {
-  fn resolve(py: Python<'_>) -> PyResult<&Py<PyCore>> {
-    if let Some(core) = GLOBAL_CORE.get() {
-      return Ok(core);
-    }
-    let core = Py::new(py, PyCore::new(None, None)?)?;
-    Ok(GLOBAL_CORE.get_or_init(|| core))
-  }
-}
 
 #[pymethods]
 impl PyCoreProxy {
@@ -156,18 +143,18 @@ impl PyCoreProxy {
   #[getter]
   #[allow(clippy::unused_self)] // pyo3 getters must be instance methods
   fn core(&self, py: Python<'_>) -> PyResult<Py<PyCore>> {
-    Ok(Self::resolve(py)?.clone_ref(py))
+    crate::environment::current_core(py)
   }
 
   #[allow(clippy::needless_pass_by_value)] // pyo3 __getattr__ takes PyRef by value
   fn __getattr__<'py>(slf: PyRef<'py, Self>, name: &str) -> PyResult<Bound<'py, PyAny>> {
     let py = slf.py();
-    Self::resolve(py)?.bind(py).getattr(name)
+    crate::environment::current_core(py)?.bind(py).getattr(name)
   }
 
   #[allow(clippy::unused_self)] // __repr__ must be an instance method
-  fn __repr__(&self) -> &'static str {
-    if GLOBAL_CORE.get().is_some() {
+  fn __repr__(&self, py: Python<'_>) -> &'static str {
+    if crate::environment::core_resolved(py) {
       "<rynth.CoreProxy (resolved)>"
     } else {
       "<rynth.CoreProxy (unresolved)>"
