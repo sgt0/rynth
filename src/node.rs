@@ -57,6 +57,7 @@ impl PyVideoNode {
     self
       .owner
       .with_core(|core| core.get_video_format_name(format))
+      .map(crate::frame::trim_format_name)
   }
 
   fn __len__(&self) -> usize {
