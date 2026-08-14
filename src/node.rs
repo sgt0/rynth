@@ -2,8 +2,9 @@
 
 use std::collections::VecDeque;
 use std::ffi::CString;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
+use async_executor::Executor;
 use num_rational::Ratio;
 use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
@@ -75,20 +76,14 @@ impl PyVideoNode {
     Ok(PyVideoFrame::new(frame, self.owner.clone()))
   }
 
-  /// Renders frame n concurrently in the core's thread pool. Returns a
+  /// Renders frame `n` concurrently in the core's thread pool. Returns a
   /// coroutine resolving to the `VideoFrame`.
-  ///
-  /// The frame request is issued once the coroutine is first polled (e.g.
-  /// when awaited or scheduled as a task), so `asyncio.gather` renders
-  /// multiple frames concurrently.
   async fn get_frame_async(&self, n: i32) -> PyResult<PyVideoFrame> {
-    let node = self.node.clone();
-    let owner = self.owner.clone();
-    let frame = node
-      .get_frame_async(n)
+    let frame = FRAME_EXECUTOR
+      .spawn(self.node.get_frame_async(n))
       .await
       .map_err(|e| PyRuntimeError::new_err(e.to_string_lossy().into_owned()))?;
-    Ok(PyVideoFrame::new(frame, owner))
+    Ok(PyVideoFrame::new(frame, self.owner.clone()))
   }
 
   /// Returns a generator iterator of all `VideoFrame`s in the clip. It will
@@ -183,6 +178,17 @@ impl PyVideoNode {
     )
   }
 }
+
+/// The shared executor that drives async frame requests.
+static FRAME_EXECUTOR: LazyLock<Arc<Executor<'static>>> = LazyLock::new(|| {
+  let executor = Arc::new(Executor::new());
+  let driver = Arc::clone(&executor);
+  std::thread::Builder::new()
+    .name("rynth-frame-async".to_owned())
+    .spawn(move || futures_lite::future::block_on(driver.run(std::future::pending::<()>())))
+    .expect("failed to spawn rynth frame executor thread");
+  executor
+});
 
 /// An in-flight or completed frame request.
 enum Slot {
