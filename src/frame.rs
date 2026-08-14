@@ -165,7 +165,7 @@ impl PyVideoFormat {
   fn from_vs(format: &VideoFormat, owner: &OwnerCell) -> Self {
     let name = owner
       .with_core(|core| core.get_video_format_name(format))
-      .unwrap_or_else(|| "None".to_owned());
+      .map_or_else(|| "None".to_owned(), trim_format_name);
     let id = owner.with_core(|core| {
       core.query_video_format_id(
         format.color_family,
@@ -187,6 +187,11 @@ impl PyVideoFormat {
       num_planes: format.num_planes,
     }
   }
+}
+
+pub(crate) fn trim_format_name(mut name: String) -> String {
+  name.truncate(name.find('\0').unwrap_or(name.len()));
+  name
 }
 
 #[pyclass(name = "Plane", frozen)]
