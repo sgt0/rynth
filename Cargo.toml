@@ -6,7 +6,6 @@ edition = "2024"
 
 [lib]
 name = "rynth"
-crate-type = ["cdylib"]
 
 [dependencies]
 async-executor = "=1.14.0"
@@ -41,10 +40,6 @@ vapoursynth4-rs = {
     git = "https://github.com/sgt0/vapoursynth4-rs",
     rev = "f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac"
 }
-
-[profile.release]
-codegen-units = 1
-lto = true
 
 [lints.rust]
 deprecated_safe = "warn"
