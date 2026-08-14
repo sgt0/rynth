@@ -8,10 +8,12 @@ use num_rational::Ratio;
 use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use vapoursynth4_rs::ColorFamily;
 use vapoursynth4_rs::frame::VideoFrame;
 use vapoursynth4_rs::node::{FrameRequest, Node, VideoNode};
 
 use crate::core::OwnerCell;
+use crate::environment;
 use crate::frame::PyVideoFrame;
 
 /// Represents a video clip.
@@ -124,6 +126,53 @@ impl PyVideoNode {
     // Kick off the initial burst of requests.
     iter.refill(&mut iter.state.lock());
     iter
+  }
+
+  /// Registers this clip as an output on the current environment.
+  #[pyo3(signature = (index = 0, alpha = None, alt_output = 0))]
+  fn set_output(
+    slf: Py<Self>,
+    py: Python<'_>,
+    index: i32,
+    alpha: Option<Py<Self>>,
+    alt_output: i32,
+  ) -> PyResult<()> {
+    if let Some(alpha) = &alpha {
+      let main = slf.borrow(py);
+      let main = main.node.info();
+      let alpha = alpha.borrow(py);
+      let alpha = alpha.node.info();
+
+      if main.width != alpha.width || main.height != alpha.height {
+        return Err(PyRuntimeError::new_err(
+          "Alpha clip dimensions must match the main video",
+        ));
+      }
+      if main.num_frames != alpha.num_frames {
+        return Err(PyRuntimeError::new_err(
+          "Alpha clip length must match the main video",
+        ));
+      }
+
+      let main_known = main.format.color_family != ColorFamily::Undefined;
+      let alpha_known = alpha.format.color_family != ColorFamily::Undefined;
+      if main_known && alpha_known {
+        if alpha.format.color_family != ColorFamily::Gray
+          || alpha.format.sample_type != main.format.sample_type
+          || alpha.format.bits_per_sample != main.format.bits_per_sample
+        {
+          return Err(PyRuntimeError::new_err(
+            "Alpha clip format must match the main video",
+          ));
+        }
+      } else if main_known || alpha_known {
+        return Err(PyRuntimeError::new_err(
+          "Format must be either known or unknown for both alpha and main clip",
+        ));
+      }
+    }
+
+    environment::store_video_output(py, index, slf, alpha, alt_output)
   }
 
   fn __repr__(&self) -> String {
