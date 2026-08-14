@@ -39,7 +39,7 @@ pyo3 = {
 }
 vapoursynth4-rs = {
     git = "https://github.com/sgt0/vapoursynth4-rs",
-    rev = "f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac"
+    rev = "3764fcf38a505b704c0982c23c92aa38d245370d"
 }
 
 [profile.release]
