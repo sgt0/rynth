@@ -15,12 +15,16 @@ use vapoursynth4_rs::{ColorFamily as VsColorFamily, SampleType as VsSampleType};
 )]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ColorFamily {
+  /// UNDEFINED.
   #[pyo3(name = "UNDEFINED")]
   Undefined = 0,
+  // GRAY.
   #[pyo3(name = "GRAY")]
   Gray = 1,
+  /// RGB.
   #[pyo3(name = "RGB")]
   Rgb = 2,
+  /// YUV.
   #[pyo3(name = "YUV")]
   Yuv = 3,
 }
@@ -48,8 +52,10 @@ impl From<VsColorFamily> for ColorFamily {
 )]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SampleType {
+  /// Integer.
   #[pyo3(name = "INTEGER")]
   Integer = 0,
+  /// Float.
   #[pyo3(name = "FLOAT")]
   Float = 1,
 }

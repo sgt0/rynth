@@ -1,0 +1,119 @@
+[project]
+site_name = "rynth"
+site_description = "Python bindings for VapourSynth"
+site_author = "sgt"
+site_url = "https://sgt0.github.io/rynth/"
+repo_url = "https://github.com/sgt0/rynth"
+repo_name = "sgt0/rynth"
+
+nav = [
+  { "Home" = "index.md" },
+  { "API" = "api.md" },
+]
+
+[project.extra]
+generator = false
+
+[project.extra.flexoki]
+signature = false
+
+[project.theme]
+name = "flexoki"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc = {
+  permalink = true
+}
+pymdownx.arithmatex = {
+  generic = true
+}
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji = {
+  emoji_generator = "zensical.extensions.emoji.to_svg",
+  emoji_index = "zensical.extensions.emoji.twemoji",
+}
+pymdownx.highlight = {
+  anchor_linenums = true,
+  line_spans = "__span",
+  pygments_lang_class = true,
+}
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences = {
+  custom_fences = [
+    {
+      name = "mermaid",
+      class = "mermaid",
+      format = "pymdownx.superfences.fence_code_format",
+    },
+  ],
+}
+pymdownx.tabbed = {
+  alternate_style = true,
+  combine_header_slug = true
+}
+pymdownx.tasklist = {
+  custom_checkbox = true
+}
+pymdownx.tilde = {}
+
+[project.plugins.mkdocstrings.handlers.python]
+inventories = ["https://docs.python.org/3/objects.inv"]
+paths = ["stubs"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+# General
+allow_inspection = false
+show_source = false
+skip_local_inventory = false
+
+# Headings
+show_root_heading = false
+show_root_full_path = false
+show_root_toc_entry = false
+show_category_heading = true
+show_symbol_type_heading = true
+show_symbol_type_toc = true
+
+# Members
+members_order = "source"
+inherited_members = true
+group_by_category = true
+summary = false
+show_labels = false
+
+# Docstring
+docstring_style = "google"
+docstring_section_style = "table"
+merge_init_into_class = true
+
+# Signatures
+line_length = 80
+overloads_only = true
+show_signature_annotations = true
+show_signature_type_parameters = true
+separate_signature = true
+signature_crossrefs = true

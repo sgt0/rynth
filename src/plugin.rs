@@ -61,10 +61,13 @@ impl PyPlugin {
   }
 }
 
+/// Function is a simple wrapper class for a function provided by a VapourSynth
+/// plugin. Its main purpose is to be called and nothing else.
 #[pyclass(name = "Function", frozen)]
 pub(crate) struct PyFunction {
   owner: Arc<OwnerCell>,
   namespace: CString,
+  /// The function name. Identical to the string used to register the function.
   name: CString,
 }
 

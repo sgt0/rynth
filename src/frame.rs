@@ -77,7 +77,7 @@ impl PyVideoFrame {
   }
 
   /// Zero-copy plane accessor. `frame[plane_idx]` returns a read-only
-  /// `memoryview` over the whole plane, matching the VapourSynth Python API.
+  /// `memoryview` over the whole plane.
   fn __getitem__(&self, py: Python<'_>, index: i32) -> PyResult<Py<PyMemoryView>> {
     let frame = &self.frame.0;
     let format = frame.get_video_format();
@@ -136,7 +136,7 @@ impl PyVideoFrame {
   }
 }
 
-/// Describes the format of a clip. Mirrors VapourSynth's `VideoFormat`.
+/// Describes the format of a clip.
 #[pyclass(name = "VideoFormat", module = "rynth", frozen)]
 pub(crate) struct PyVideoFormat {
   #[pyo3(get)]
