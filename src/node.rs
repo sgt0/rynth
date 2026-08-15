@@ -7,7 +7,7 @@ use std::sync::{Arc, LazyLock};
 use async_executor::Executor;
 use num_rational::Ratio;
 use parking_lot::Mutex;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use vapoursynth4_rs::ColorFamily;
 use vapoursynth4_rs::frame::VideoFrame;
@@ -209,6 +209,40 @@ impl PyVideoNode {
       return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
     }
     let clip_key = KeyStr::from_cstr(c"clip");
+    crate::convert::key_to_py(py, &ret, clip_key, &self.owner)
+  }
+
+  fn __mul__(&self, py: Python<'_>, n: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let n: i64 = n
+      .extract()
+      .map_err(|_| PyTypeError::new_err("Clips may only be repeated by integer factors"))?;
+    if n <= 0 {
+      return Err(PyValueError::new_err("Loop count must greater than zero"));
+    }
+    let mut args = self
+      .owner
+      .with_core(vapoursynth4_rs::core::Core::create_map);
+    let clip_key = KeyStr::from_cstr(c"clip");
+    let times_key = KeyStr::from_cstr(c"times");
+    args
+      .set(
+        clip_key,
+        Value::VideoNode(self.node.clone()),
+        AppendMode::Replace,
+      )
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    args
+      .set(times_key, Value::Int(n), AppendMode::Replace)
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let ret = self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(c"std")
+        .expect("std plugin must be loaded");
+      plugin.invoke(c"Loop", &args)
+    });
+    if let Some(err) = ret.get_error() {
+      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
+    }
     crate::convert::key_to_py(py, &ret, clip_key, &self.owner)
   }
 }

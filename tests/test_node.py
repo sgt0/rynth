@@ -98,3 +98,12 @@ def test_add(core: rynth.Core) -> None:
     assert c.width == 64
     assert np.array(c.get_frame(0)[0])[0, 0] == 10
     assert np.array(c.get_frame(9)[0])[0, 0] == 200
+
+
+def test_mul(core: rynth.Core) -> None:
+    clip = core.std.BlankClip(width=64, height=64, length=5)
+    assert (clip * 3).num_frames == 15
+    with pytest.raises(ValueError, match="Loop count"):
+        clip * 0
+    with pytest.raises(TypeError, match="integer factors"):
+        clip * "x"
