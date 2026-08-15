@@ -11,6 +11,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use vapoursynth4_rs::ColorFamily;
 use vapoursynth4_rs::frame::VideoFrame;
+use vapoursynth4_rs::map::{AppendMode, KeyStr, Value};
 use vapoursynth4_rs::node::{FrameRequest, Node, VideoNode};
 
 use crate::core::OwnerCell;
@@ -176,6 +177,39 @@ impl PyVideoNode {
       "<rynth.VideoNode {}x{}, {} frames, {}/{} fps>",
       info.width, info.height, info.num_frames, info.fps_num, info.fps_den
     )
+  }
+
+  #[allow(clippy::needless_pass_by_value)]
+  fn __add__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<Py<PyAny>> {
+    let clips_key = KeyStr::from_cstr(c"clips");
+    let mut args = self
+      .owner
+      .with_core(vapoursynth4_rs::core::Core::create_map);
+    args
+      .set(
+        clips_key,
+        Value::VideoNode(self.node.clone()),
+        AppendMode::Replace,
+      )
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    args
+      .set(
+        clips_key,
+        Value::VideoNode(other.node.clone()),
+        AppendMode::Append,
+      )
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let ret = self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(c"std")
+        .expect("std plugin must be loaded");
+      plugin.invoke(c"Splice", &args)
+    });
+    if let Some(err) = ret.get_error() {
+      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
+    }
+    let clip_key = KeyStr::from_cstr(c"clip");
+    crate::convert::key_to_py(py, &ret, clip_key, &self.owner)
   }
 }
 
