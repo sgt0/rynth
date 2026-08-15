@@ -5,37 +5,98 @@ use std::sync::Arc;
 
 use pyo3::exceptions::{PyAttributeError, PyRuntimeError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
 use vapoursynth4_rs::map::KeyStr;
 
 use crate::convert::{key_to_py, kwargs_to_map, map_to_py_dict, signature_types};
 use crate::core::OwnerCell;
 
-#[pyclass(name = "Plugin", frozen)]
+/// Plugin is a class that represents a loaded plugin and its namespace.
+#[pyclass(name = "Plugin", frozen, from_py_object)]
+#[derive(Clone)]
 pub(crate) struct PyPlugin {
   pub(crate) owner: Arc<OwnerCell>,
+  /// The namespace of the plugin.
   pub(crate) namespace: CString,
 }
 
 #[pymethods]
 impl PyPlugin {
+  /// The namespace of the plugin.
   #[getter]
   fn namespace(&self) -> String {
     self.namespace.to_string_lossy().into_owned()
   }
 
-  /// Names of all functions in this plugin.
+  /// The name string of the plugin.
   #[getter]
-  fn functions(&self) -> Vec<String> {
+  fn name(&self) -> String {
     self.owner.with_core(|core| {
       let plugin = core
         .get_plugin_by_namespace(&self.namespace)
         .expect("validated at construction");
-      plugin
-        .functions()
-        .map(|f| f.name().to_string_lossy().into_owned())
-        .collect()
+      plugin.name().to_string_lossy().into_owned()
     })
+  }
+
+  /// The plugin identifier string.
+  #[getter]
+  fn identifier(&self) -> String {
+    self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      plugin.id().to_string_lossy().into_owned()
+    })
+  }
+
+  /// The version of the plugin returned as a `PluginVersion` (major, minor)
+  /// tuple.
+  #[getter]
+  fn version<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+    let ver = self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      plugin.version()
+    });
+    let major = ver >> 16;
+    let minor = if major > -1 { ver - (major << 16) } else { 0 };
+    PyTuple::new(py, [major, minor])
+  }
+
+  /// The main library location of the plugin. Returns None for internal
+  /// functions.
+  #[getter]
+  fn plugin_path(&self) -> Option<String> {
+    self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      let path = plugin.path();
+      let s = path.to_string_lossy();
+      if s.is_empty() {
+        None
+      } else {
+        Some(s.into_owned())
+      }
+    })
+  }
+
+  /// Yields all functions in the plugin as an iterator of `Function` objects.
+  fn functions(&self) -> PyFunctionIter {
+    let names: Vec<CString> = self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      plugin.functions().map(|f| f.name().into()).collect()
+    });
+    PyFunctionIter {
+      owner: self.owner.clone(),
+      namespace: self.namespace.clone(),
+      names,
+      index: 0,
+    }
   }
 
   fn __getattr__(&self, name: &str) -> PyResult<PyFunction> {
@@ -57,7 +118,21 @@ impl PyPlugin {
       owner: self.owner.clone(),
       namespace: self.namespace.clone(),
       name: fname,
+      plugin: self.clone(),
     })
+  }
+
+  fn __repr__(&self) -> String {
+    format!(
+      "<rynth.Plugin namespace={} name={}>",
+      self.namespace.to_string_lossy(),
+      self.owner.with_core(|core| {
+        let plugin = core
+          .get_plugin_by_namespace(&self.namespace)
+          .expect("validated at construction");
+        plugin.name().to_string_lossy().into_owned()
+      })
+    )
   }
 }
 
@@ -69,6 +144,8 @@ pub(crate) struct PyFunction {
   namespace: CString,
   /// The function name. Identical to the string used to register the function.
   name: CString,
+  /// The Plugin object the function belongs to.
+  plugin: PyPlugin,
 }
 
 #[pymethods]
@@ -108,11 +185,84 @@ impl PyFunction {
     }
   }
 
+  /// The function name. Identical to the string used to register the function.
+  #[getter]
+  fn name(&self) -> String {
+    self.name.to_string_lossy().into_owned()
+  }
+
+  /// The Plugin object the function belongs to.
+  #[getter]
+  fn plugin(&self) -> PyPlugin {
+    self.plugin.clone()
+  }
+
+  /// Raw function signature string. Identical to the string used to register
+  /// the function.
+  #[getter]
+  fn signature(&self) -> String {
+    self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      let func = plugin
+        .get_function_by_name(&self.name)
+        .expect("validated at construction");
+      func.arguments().to_string_lossy().into_owned()
+    })
+  }
+
+  /// Raw function return type signature string. Identical to the return type
+  /// string used to register the function.
+  #[getter]
+  fn return_signature(&self) -> String {
+    self.owner.with_core(|core| {
+      let plugin = core
+        .get_plugin_by_namespace(&self.namespace)
+        .expect("validated at construction");
+      let func = plugin
+        .get_function_by_name(&self.name)
+        .expect("validated at construction");
+      func.return_type().to_string_lossy().into_owned()
+    })
+  }
+
   fn __repr__(&self) -> String {
     format!(
       "<rynth.Function {}.{}>",
       self.namespace.to_string_lossy(),
       self.name.to_string_lossy()
     )
+  }
+}
+
+/// Iterator over the functions in a plugin.
+#[pyclass(name = "PluginFunctionIter")]
+pub(crate) struct PyFunctionIter {
+  owner: Arc<OwnerCell>,
+  namespace: CString,
+  names: Vec<CString>,
+  index: usize,
+}
+
+#[pymethods]
+impl PyFunctionIter {
+  #[allow(clippy::missing_const_for_fn)]
+  fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    slf
+  }
+
+  fn __next__(&mut self) -> Option<PyFunction> {
+    let name = self.names.get(self.index)?.clone();
+    self.index += 1;
+    Some(PyFunction {
+      owner: self.owner.clone(),
+      namespace: self.namespace.clone(),
+      name,
+      plugin: PyPlugin {
+        owner: self.owner.clone(),
+        namespace: self.namespace.clone(),
+      },
+    })
   }
 }

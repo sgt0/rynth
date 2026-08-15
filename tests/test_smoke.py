@@ -11,14 +11,14 @@ def core() -> rynth.Core:
 
 
 def test_core_plugins(core: rynth.Core) -> None:
-    namespaces = [ns for ns, _, _ in core.plugins]
+    namespaces = [p.namespace for p in core.plugins() if p is not None]
     assert "std" in namespaces
     with pytest.raises(AttributeError):
         _ = core.definitely_not_a_plugin
 
 
 def test_plugin_getattr(core: rynth.Core) -> None:
-    assert "BlankClip" in core.std.functions
+    assert any(f.name == "BlankClip" for f in core.std.functions() if f is not None)
     with pytest.raises(AttributeError):
         _ = core.std.DefinitelyNotAFunction
 

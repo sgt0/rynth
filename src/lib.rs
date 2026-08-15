@@ -17,7 +17,7 @@ mod rynth {
   use super::{Bound, Py, PyModule, PyModuleMethods, PyResult};
 
   #[pymodule_export]
-  use crate::core::{PyCore, PyCoreProxy};
+  use crate::core::{PyCore, PyCoreProxy, PyPluginIter};
   #[pymodule_export]
   use crate::enums::{ColorFamily, SampleType};
   #[pymodule_export]
@@ -35,7 +35,7 @@ mod rynth {
   #[pymodule_export]
   use crate::node::{PyFrameIter, PyVideoNode};
   #[pymodule_export]
-  use crate::plugin::{PyFunction, PyPlugin};
+  use crate::plugin::{PyFunction, PyFunctionIter, PyPlugin};
 
   #[pymodule_init]
   fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -22,6 +22,7 @@ unsafe impl Send for OwnerCell {}
 unsafe impl Sync for OwnerCell {}
 
 impl OwnerCell {
+  /// Borrows the underlying [`Core`] for the duration of `f`.
   pub(crate) fn with_core<R>(&self, f: impl FnOnce(&Core) -> R) -> R {
     f(&self.0)
   }
@@ -49,21 +50,16 @@ impl PyCore {
     })
   }
 
-  /// Namespaces of all loaded plugins.
-  #[getter]
-  fn plugins(&self) -> Vec<(String, String, String)> {
-    self.owner.with_core(|core| {
-      core
-        .plugins()
-        .map(|p| {
-          (
-            p.namespace().to_string_lossy().into_owned(),
-            p.id().to_string_lossy().into_owned(),
-            p.name().to_string_lossy().into_owned(),
-          )
-        })
-        .collect()
-    })
+  /// Yields all loaded plugins as an iterator of `Plugin` objects.
+  fn plugins(&self) -> PyPluginIter {
+    let namespaces: Vec<CString> = self
+      .owner
+      .with_core(|core| core.plugins().map(|p| p.namespace().into()).collect());
+    PyPluginIter {
+      owner: self.owner.clone(),
+      namespaces,
+      index: 0,
+    }
   }
 
   /// The number of concurrent threads used by the core.
@@ -159,5 +155,30 @@ impl PyCoreProxy {
     } else {
       "<rynth.CoreProxy (unresolved)>"
     }
+  }
+}
+
+/// Iterator over the plugins loaded in a core.
+#[pyclass(name = "PluginIter")]
+pub(crate) struct PyPluginIter {
+  owner: Arc<OwnerCell>,
+  namespaces: Vec<CString>,
+  index: usize,
+}
+
+#[pymethods]
+impl PyPluginIter {
+  #[allow(clippy::missing_const_for_fn)]
+  fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    slf
+  }
+
+  fn __next__(&mut self) -> Option<PyPlugin> {
+    let ns = self.namespaces.get(self.index)?.clone();
+    self.index += 1;
+    Some(PyPlugin {
+      owner: self.owner.clone(),
+      namespace: ns,
+    })
   }
 }
