@@ -35,10 +35,12 @@ import rynth as vs
 
 core = vs.core
 
+
 async def main():
     clip = core.std.BlankClip(width=1920, height=1080, length=100)
     frame = await clip.get_frame_async(42)
     print(f"Frame 42: {frame.width}x{frame.height}")
+
 
 asyncio.run(main())
 ```
