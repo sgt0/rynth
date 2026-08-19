@@ -136,25 +136,35 @@ impl PyVideoFrame {
   }
 }
 
-/// Describes the format of a clip.
+/// Represents all information needed to describe a frame format. It holds the
+/// general color type, subsampling, number of planes, and so on
 #[pyclass(name = "VideoFormat", module = "rynth", frozen)]
 pub(crate) struct PyVideoFormat {
+  /// A unique id identifying the format.
   #[pyo3(get)]
   id: u32,
+  /// A human readable name of the format.
   #[pyo3(get)]
   name: String,
+  /// Which group of colorspaces the format describes.
   #[pyo3(get)]
   color_family: ColorFamily,
+  /// If the format is integer or floating point based.
   #[pyo3(get)]
   sample_type: SampleType,
+  /// How many bits are used to store one sample in one plane.
   #[pyo3(get)]
   bits_per_sample: i32,
+  /// The actual storage is padded up to 2^n bytes for efficiency.
   #[pyo3(get)]
   bytes_per_sample: i32,
+  /// The subsampling for the second and third plane in the horizontal direction.
   #[pyo3(get)]
   subsampling_w: i32,
+  /// The subsampling for the second and third plane in the vertical direction.
   #[pyo3(get)]
   subsampling_h: i32,
+  /// The number of planes the format has.
   #[pyo3(get)]
   num_planes: i32,
 }
