@@ -6,8 +6,10 @@ mod core;
 mod enums;
 mod environment;
 mod frame;
+mod map_ext;
 mod node;
 mod plugin;
+mod std_ns;
 
 use pyo3::prelude::*;
 

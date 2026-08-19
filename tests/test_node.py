@@ -107,3 +107,43 @@ def test_mul(core: rynth.Core) -> None:
         clip * 0
     with pytest.raises(TypeError, match="integer factors"):
         clip * "x"
+
+
+def test_getitem(core: rynth.Core) -> None:
+    a = core.std.BlankClip(width=64, height=64, length=7, color=[10, 128, 128])
+    b = core.std.BlankClip(width=64, height=64, length=7, color=[200, 128, 128])
+    clip = a + b
+    f = clip[9]
+    assert f.num_frames == 1
+    assert np.array(f.get_frame(0)[0])[0, 0] == 200
+    assert np.array(clip[0].get_frame(0)[0])[0, 0] == 10
+    assert np.array(clip[-1].get_frame(0)[0])[0, 0] == 200
+    with pytest.raises(IndexError, match="out of range"):
+        clip[14]
+    with pytest.raises(IndexError, match="out of range"):
+        clip[-15]
+    with pytest.raises(TypeError, match="integers or slices"):
+        clip["x"]
+
+
+def _get_y(clip: rynth.VideoNode) -> list[int]:
+    return [int(np.array(clip.get_frame(n)[0])[0, 0]) for n in range(clip.num_frames)]
+
+
+def test_getitem_slice(core: rynth.Core) -> None:
+    clip = core.std.BlankClip(width=16, height=16, length=1, color=[0, 128, 128])
+    for i in range(1, 12):
+        clip = clip + core.std.BlankClip(
+            width=16, height=16, length=1, color=[i, 128, 128]
+        )
+    assert _get_y(clip) == list(range(12))
+
+    assert _get_y(clip[5:11]) == [5, 6, 7, 8, 9, 10]
+    assert _get_y(clip[::2]) == [0, 2, 4, 6, 8, 10]
+    assert _get_y(clip[1::2]) == [1, 3, 5, 7, 9, 11]
+    assert _get_y(clip[::-1]) == list(reversed(range(12)))
+    assert _get_y(clip[8:3:-2]) == [8, 6, 4]
+    assert _get_y(clip[:]) == list(range(12))
+
+    with pytest.raises(ValueError, match="[Ss]tep cannot be zero"):
+        clip[::0]

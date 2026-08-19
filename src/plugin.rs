@@ -3,7 +3,7 @@
 use std::ffi::CString;
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyAttributeError, PyRuntimeError};
+use pyo3::exceptions::PyAttributeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use vapoursynth4_rs::map::KeyStr;
@@ -152,30 +152,21 @@ pub(crate) struct PyFunction {
 impl PyFunction {
   #[pyo3(signature = (**kwargs))]
   fn __call__(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Py<PyAny>> {
-    let mut args = self
-      .owner
-      .with_core(vapoursynth4_rs::core::Core::create_map);
-    if let Some(kwargs) = kwargs {
-      let types = self.owner.with_core(|core| {
-        let plugin = core
-          .get_plugin_by_namespace(&self.namespace)
-          .expect("validated at construction");
-        let func = plugin
-          .get_function_by_name(&self.name)
-          .expect("validated at construction");
-        signature_types(&func.arguments().to_string_lossy())
-      });
-      kwargs_to_map(&mut args, kwargs, &types)?;
-    }
-    let ret = self.owner.with_core(|core| {
-      let plugin = core
-        .get_plugin_by_namespace(&self.namespace)
-        .expect("validated at construction");
-      plugin.invoke(&self.name, &args)
-    });
-    if let Some(err) = ret.get_error() {
-      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
-    }
+    let ret = self.owner.invoke(&self.namespace, &self.name, |args| {
+      if let Some(kwargs) = kwargs {
+        let types = self.owner.with_core(|core| {
+          let plugin = core
+            .get_plugin_by_namespace(&self.namespace)
+            .expect("validated at construction");
+          let func = plugin
+            .get_function_by_name(&self.name)
+            .expect("validated at construction");
+          signature_types(&func.arguments().to_string_lossy())
+        });
+        kwargs_to_map(args, kwargs, &types)?;
+      }
+      Ok(())
+    })?;
     // Convention is that a single-key result unwraps to its value.
     if ret.len() == 1 {
       let key: CString = (**ret.get_key(0)).into();

@@ -1,11 +1,12 @@
 //! The `Core` pyclass and the lazy `core` proxy.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyAttributeError, PyValueError};
+use pyo3::exceptions::{PyAttributeError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use vapoursynth4_rs::core::Core;
+use vapoursynth4_rs::map::Map;
 
 use crate::api::apis;
 use crate::plugin::PyPlugin;
@@ -25,6 +26,36 @@ impl OwnerCell {
   /// Borrows the underlying [`Core`] for the duration of `f`.
   pub(crate) fn with_core<R>(&self, f: impl FnOnce(&Core) -> R) -> R {
     f(&self.0)
+  }
+
+  /// Invokes `namespace.func` with an argument map populated by `build`,
+  /// returning the result map.
+  pub(crate) fn invoke(
+    &self,
+    namespace: &CStr,
+    func: &CStr,
+    build: impl FnOnce(&mut Map) -> PyResult<()>,
+  ) -> PyResult<Map> {
+    let mut args = self.with_core(Core::create_map);
+    build(&mut args)?;
+    let ret = self.with_core(|core| -> PyResult<Map> {
+      let plugin = core.get_plugin_by_namespace(namespace).ok_or_else(|| {
+        PyRuntimeError::new_err(format!(
+          "no plugin with namespace {:?} is loaded",
+          namespace.to_string_lossy()
+        ))
+      })?;
+      Ok(plugin.invoke(func, &args))
+    })?;
+    if let Some(err) = ret.get_error() {
+      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
+    }
+    Ok(ret)
+  }
+
+  /// Typed access to the `std` plugin namespace.
+  pub(crate) const fn std(&self) -> crate::std_ns::Std<'_> {
+    crate::std_ns::Std(self)
   }
 }
 

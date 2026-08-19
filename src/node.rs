@@ -7,11 +7,11 @@ use std::sync::{Arc, LazyLock};
 use async_executor::Executor;
 use num_rational::Ratio;
 use parking_lot::Mutex;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::{PySlice, PySliceMethods};
 use vapoursynth4_rs::ColorFamily;
 use vapoursynth4_rs::frame::VideoFrame;
-use vapoursynth4_rs::map::{AppendMode, KeyStr, Value};
 use vapoursynth4_rs::node::{FrameRequest, Node, VideoNode};
 
 use crate::core::OwnerCell;
@@ -181,35 +181,13 @@ impl PyVideoNode {
 
   #[allow(clippy::needless_pass_by_value)]
   fn __add__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<Py<PyAny>> {
-    let clips_key = KeyStr::from_cstr(c"clips");
-    let mut args = self
+    let node = self
       .owner
-      .with_core(vapoursynth4_rs::core::Core::create_map);
-    args
-      .set(
-        clips_key,
-        Value::VideoNode(self.node.clone()),
-        AppendMode::Replace,
-      )
-      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    args
-      .set(
-        clips_key,
-        Value::VideoNode(other.node.clone()),
-        AppendMode::Append,
-      )
-      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    let ret = self.owner.with_core(|core| {
-      let plugin = core
-        .get_plugin_by_namespace(c"std")
-        .expect("std plugin must be loaded");
-      plugin.invoke(c"Splice", &args)
-    });
-    if let Some(err) = ret.get_error() {
-      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
-    }
-    let clip_key = KeyStr::from_cstr(c"clip");
-    crate::convert::key_to_py(py, &ret, clip_key, &self.owner)
+      .std()
+      .splice()
+      .clips(vec![self.node.clone(), other.node.clone()])
+      .call()?;
+    self.wrap_node(py, node)
   }
 
   fn __mul__(&self, py: Python<'_>, n: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -219,31 +197,94 @@ impl PyVideoNode {
     if n <= 0 {
       return Err(PyValueError::new_err("Loop count must greater than zero"));
     }
-    let mut args = self
+    let node = self
       .owner
-      .with_core(vapoursynth4_rs::core::Core::create_map);
-    let clip_key = KeyStr::from_cstr(c"clip");
-    let times_key = KeyStr::from_cstr(c"times");
-    args
-      .set(
-        clip_key,
-        Value::VideoNode(self.node.clone()),
-        AppendMode::Replace,
-      )
-      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    args
-      .set(times_key, Value::Int(n), AppendMode::Replace)
-      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    let ret = self.owner.with_core(|core| {
-      let plugin = core
-        .get_plugin_by_namespace(c"std")
-        .expect("std plugin must be loaded");
-      plugin.invoke(c"Loop", &args)
-    });
-    if let Some(err) = ret.get_error() {
-      return Err(PyRuntimeError::new_err(err.to_string_lossy().into_owned()));
+      .std()
+      .repeat()
+      .clip(self.node.clone())
+      .times(n)
+      .call()?;
+    self.wrap_node(py, node)
+  }
+
+  #[allow(clippy::needless_pass_by_value)]
+  fn __getitem__(&self, py: Python<'_>, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let len = i64::from(self.node.info().num_frames);
+
+    // `clip[start:stop:step]`
+    if let Ok(slice) = index.cast::<PySlice>() {
+      let indices = slice.indices(len as isize)?;
+      let step = indices.step;
+      let (mut first, mut last) = if step > 0 {
+        (indices.start, indices.stop)
+      } else {
+        (indices.stop, indices.start)
+      };
+
+      // Make bounds inclusive for std.Trim.
+      if step > 0 {
+        last -= 1;
+      } else {
+        first += 1;
+      }
+
+      let mut node = self
+        .owner
+        .std()
+        .trim()
+        .clip(self.node.clone())
+        .first(first as i64)
+        .last(last as i64)
+        .call()?;
+      if step < 0 {
+        node = self.owner.std().reverse().clip(node).call()?;
+      }
+      if step.abs() != 1 {
+        node = self
+          .owner
+          .std()
+          .select_every()
+          .clip(node)
+          .cycle(step.unsigned_abs() as i64)
+          .offset(0)
+          .call()?;
+      }
+      return self.wrap_node(py, node);
     }
-    crate::convert::key_to_py(py, &ret, clip_key, &self.owner)
+
+    // `clip[n]`
+    let n: i64 = index
+      .extract()
+      .map_err(|_| PyTypeError::new_err("VideoNode indices must be integers or slices"))?;
+    let frame = if n < 0 { n + len } else { n };
+    if frame < 0 || frame >= len {
+      return Err(PyIndexError::new_err("VideoNode index out of range"));
+    }
+    let node = self
+      .owner
+      .std()
+      .trim()
+      .clip(self.node.clone())
+      .first(frame)
+      .last(frame)
+      .call()?;
+    self.wrap_node(py, node)
+  }
+}
+
+impl PyVideoNode {
+  /// Wraps a raw node into a Python `VideoNode` sharing this clip's core.
+  fn wrap_node(&self, py: Python<'_>, node: VideoNode) -> PyResult<Py<PyAny>> {
+    Ok(
+      Py::new(
+        py,
+        Self {
+          node,
+          owner: self.owner.clone(),
+        },
+      )?
+      .into_any(),
+    )
   }
 }
 

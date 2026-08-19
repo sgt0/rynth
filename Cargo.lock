@@ -549,6 +549,7 @@ name = "rynth"
 version = "0.0.2"
 dependencies = [
  "async-executor",
+ "bon",
  "futures-lite",
  "libloading",
  "num-rational",
