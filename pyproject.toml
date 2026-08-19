@@ -1,6 +1,6 @@
 [project]
 name = "rynth"
-version = "0.0.3"
+version = "0.0.4"
 description = "Python bindings for VapourSynth."
 readme = "README.md"
 license = "EUPL-1.2"
