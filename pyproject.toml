@@ -30,7 +30,6 @@ stubPath = "stubs"
 
 [tool.maturin]
 module-name = "rynth"
-auditwheel = "skip"
 
 [tool.maturin.generate-ci.github]
 trusted-publishing = true
