@@ -18,7 +18,7 @@ dev = [
     "numpy==2.5.2",
     "pytest==9.1.1",
     "ruff==0.16.4",
-    "zensical==0.0.56",
+    "zensical==0.0.57",
 ]
 
 [build-system]
