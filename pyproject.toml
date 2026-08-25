@@ -12,7 +12,7 @@ dependencies = ["vapoursynth>=79"]
 [dependency-groups]
 dev = [
     "flexoki-zensical==0.1.1",
-    "maturin==1.14.1",
+    "maturin==1.15.0",
     "mkdocstrings-python==2.0.7",
     "mypy==2.3.1",
     "numpy==2.5.2",
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["maturin>=1.14.1,<2"]
+requires = ["maturin>=1.15.0,<2"]
 build-backend = "maturin"
 
 [tool.basedpyright]
