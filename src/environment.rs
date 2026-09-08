@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -126,7 +126,7 @@ impl EnvironmentData {
 /// Base class for pluggable environment policies. Subclass in Python and pass
 /// an instance to [`register_policy`] to control how the current environment is
 /// selected (e.g. per-thread for a script host).
-#[pyclass(subclass, name = "EnvironmentPolicy", module = "rynth")]
+#[pyclass(subclass, weakref, name = "EnvironmentPolicy", module = "rynth")]
 pub(crate) struct EnvironmentPolicy;
 
 #[pymethods]
@@ -159,7 +159,12 @@ impl EnvironmentPolicy {
 }
 
 /// The default policy, which is an always-current single environment.
-#[pyclass(frozen, name = "StandaloneEnvironmentPolicy", module = "rynth")]
+#[pyclass(
+  frozen,
+  weakref,
+  name = "StandaloneEnvironmentPolicy",
+  module = "rynth"
+)]
 pub(crate) struct StandaloneEnvironmentPolicy {
   environment: Mutex<Option<Py<EnvironmentData>>>,
   api: Mutex<Option<Py<EnvironmentPolicyAPI>>>,
@@ -216,13 +221,35 @@ impl StandaloneEnvironmentPolicy {
 /// and unregister itself.
 #[pyclass(frozen, name = "EnvironmentPolicyAPI", module = "rynth")]
 pub(crate) struct EnvironmentPolicyAPI {
+  target_policy: Py<PyAny>,
   known: Mutex<Vec<Py<EnvironmentData>>>,
 }
 
 impl EnvironmentPolicyAPI {
-  const fn empty() -> Self {
-    Self {
+  fn new(py: Python<'_>, policy: &Py<PyAny>) -> PyResult<Self> {
+    let target_policy = py
+      .import("weakref")?
+      .getattr("ref")?
+      .call1((policy.clone_ref(py),))?
+      .unbind();
+    Ok(Self {
+      target_policy,
       known: Mutex::new(Vec::new()),
+    })
+  }
+
+  fn ensure_policy_matches(&self, py: Python<'_>) -> PyResult<()> {
+    let target = self.target_policy.call0(py)?;
+    if POLICY
+      .lock()
+      .as_ref()
+      .is_some_and(|policy| policy.as_ptr() == target.as_ptr())
+    {
+      Ok(())
+    } else {
+      Err(PyValueError::new_err(
+        "The currently activated policy does not match the bound policy. Was the environment unregistered?",
+      ))
     }
   }
 }
@@ -234,6 +261,21 @@ impl EnvironmentPolicyAPI {
     let env = Py::new(py, EnvironmentData::new(flags))?;
     self.known.lock().push(env.clone_ref(py));
     Ok(env)
+  }
+
+  /// Wraps opaque environment data in a public environment handle.
+  ///
+  /// The caller is responsible for ensuring that the data represents a live
+  /// environment.
+  fn wrap_environment(
+    &self,
+    py: Python<'_>,
+    environment_data: Py<EnvironmentData>,
+  ) -> PyResult<Environment> {
+    self.ensure_policy_matches(py)?;
+    Ok(Environment {
+      env: environment_data,
+    })
   }
 
   #[allow(clippy::needless_pass_by_value)]
@@ -399,9 +441,11 @@ fn register_policy_inner(py: Python<'_>, policy: &Py<PyAny>) -> PyResult<()> {
     }
     *guard = Some(policy.clone_ref(py));
   }
-  // Call into Python without holding the lock to avoid re-entrant deadlock.
-  let api = Py::new(py, EnvironmentPolicyAPI::empty())?;
-  policy.call_method1(py, "on_policy_registered", (api,))?;
+  let api = Py::new(py, EnvironmentPolicyAPI::new(py, policy)?)?;
+  if let Err(error) = policy.call_method1(py, "on_policy_registered", (api,)) {
+    POLICY.lock().take();
+    return Err(error);
+  }
   Ok(())
 }
 
