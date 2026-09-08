@@ -32,6 +32,49 @@ def test_get_frame_and_zero_copy(core: rynth.Core) -> None:
     assert not arr.flags.writeable
 
 
+def test_video_frame_is_raw_frame(core: rynth.Core) -> None:
+    frame = core.std.BlankClip(width=16, height=16, length=1).get_frame(0)
+
+    assert issubclass(type(frame), rynth.RawFrame)
+    assert frame.readonly
+    assert not frame.closed
+    assert frame.get_read_ptr(0) != 0
+    assert frame.get_stride(0) >= frame.width
+    with pytest.raises(RuntimeError, match="writable frames"):
+        frame.get_write_ptr(0)
+
+
+def test_raw_frame_context_manager_closes_frame(core: rynth.Core) -> None:
+    frame = core.std.BlankClip(width=16, height=16, length=1).get_frame(0)
+
+    with frame as entered:
+        assert entered is frame
+        assert not frame.closed
+
+    assert frame.closed
+    frame.close()
+    with pytest.raises(RuntimeError, match="already been released"):
+        len(frame)
+    with pytest.raises(RuntimeError, match="already been released"):
+        _ = frame.props
+
+
+def test_video_frame_copy_is_writable(core: rynth.Core) -> None:
+    frame = core.std.BlankClip(width=16, height=16, length=1).get_frame(0)
+    copied = frame.copy()
+
+    assert isinstance(copied, rynth.VideoFrame)
+    assert isinstance(copied, rynth.RawFrame)
+    assert not copied.readonly
+    assert copied.get_write_ptr(0) != 0
+    assert bytes(copied[0]) == bytes(frame[0])
+
+
+def test_raw_frame_cannot_be_instantiated() -> None:
+    with pytest.raises(TypeError):
+        rynth.RawFrame()  # type: ignore[call-arg]
+
+
 def test_invert(core: rynth.Core) -> None:
     clip = core.std.BlankClip(width=64, height=64, length=1, color=[0, 128, 128])
     inverted = core.std.Invert(clip=clip)

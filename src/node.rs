@@ -69,22 +69,22 @@ impl PyVideoNode {
   }
 
   /// Returns a `VideoFrame` from position n.
-  fn get_frame(&self, py: Python<'_>, n: i32) -> PyResult<PyVideoFrame> {
+  fn get_frame(&self, py: Python<'_>, n: i32) -> PyResult<Py<PyVideoFrame>> {
     let node = &self.node;
     let frame = py
       .detach(|| node.get_frame(n))
       .map_err(|e| PyRuntimeError::new_err(e.to_string_lossy().into_owned()))?;
-    Ok(PyVideoFrame::new(frame, self.owner.clone()))
+    PyVideoFrame::create(py, frame, self.owner.clone())
   }
 
   /// Renders frame `n` concurrently in the core's thread pool. Returns a
   /// coroutine resolving to the `VideoFrame`.
-  async fn get_frame_async(&self, n: i32) -> PyResult<PyVideoFrame> {
+  async fn get_frame_async(&self, n: i32) -> PyResult<Py<PyVideoFrame>> {
     let frame = FRAME_EXECUTOR
       .spawn(self.node.get_frame_async(n))
       .await
       .map_err(|e| PyRuntimeError::new_err(e.to_string_lossy().into_owned()))?;
-    Ok(PyVideoFrame::new(frame, self.owner.clone()))
+    Python::attach(|py| PyVideoFrame::create(py, frame, self.owner.clone()))
   }
 
   /// Returns a generator iterator of all `VideoFrame`s in the clip. It will
@@ -366,7 +366,7 @@ impl PyFrameIter {
     slf
   }
 
-  fn __next__(&self, py: Python<'_>) -> PyResult<Option<PyVideoFrame>> {
+  fn __next__(&self, py: Python<'_>) -> PyResult<Option<Py<PyVideoFrame>>> {
     // Block (without the GIL) until the next frame in order is rendered.
     let frame = py.detach(|| {
       let mut st = self.state.lock();
@@ -391,11 +391,10 @@ impl PyFrameIter {
       }
     });
 
-    Ok(
-      frame
-        .map_err(PyRuntimeError::new_err)?
-        .map(|frame| PyVideoFrame::new(frame, self.owner.clone())),
-    )
+    frame
+      .map_err(PyRuntimeError::new_err)?
+      .map(|frame| PyVideoFrame::create(py, frame, self.owner.clone()))
+      .transpose()
   }
 }
 

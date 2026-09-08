@@ -3,7 +3,7 @@
 use std::ffi::{CString, c_int};
 use std::sync::{Arc, OnceLock};
 
-use pyo3::exceptions::{PyBufferError, PyIndexError, PyRuntimeError};
+use pyo3::exceptions::{PyBufferError, PyIndexError, PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyMemoryView};
 use vapoursynth4_rs::ffi;
@@ -22,21 +22,148 @@ unsafe impl Send for FrameCell {}
 // SAFETY: same as `Send` above. The frame is never mutated.
 unsafe impl Sync for FrameCell {}
 
-/// Represents a video frame and all metadata attached to it.
-#[pyclass(name = "VideoFrame", module = "rynth", frozen)]
-pub(crate) struct PyVideoFrame {
-  pub(crate) frame: Arc<FrameCell>,
+/// Common lifecycle and data access for audio and video frames.
+#[pyclass(name = "RawFrame", module = "rynth", frozen, subclass, weakref)]
+pub(crate) struct PyRawFrame {
+  frame: parking_lot::Mutex<Option<Arc<FrameCell>>>,
   pub(crate) owner: Arc<OwnerCell>,
+  readonly: bool,
+}
+
+impl PyRawFrame {
+  fn new(frame: VideoFrame, owner: Arc<OwnerCell>, readonly: bool) -> Self {
+    Self {
+      frame: parking_lot::Mutex::new(Some(Arc::new(FrameCell(frame)))),
+      owner,
+      readonly,
+    }
+  }
+
+  fn frame(&self) -> PyResult<Arc<FrameCell>> {
+    self
+      .frame
+      .lock()
+      .clone()
+      .ok_or_else(|| PyRuntimeError::new_err("The Frame has already been released."))
+  }
+}
+
+#[pymethods]
+impl PyRawFrame {
+  /// Whether or not the frame has been closed.
+  #[getter]
+  fn closed(&self) -> bool {
+    self.frame.lock().is_none()
+  }
+
+  /// Whether or not the frame data and properties cannot be modified.
+  #[getter]
+  const fn readonly(&self) -> bool {
+    self.readonly
+  }
+
+  /// Forcefully releases this frame.
+  fn close(&self) {
+    self.frame.lock().take();
+  }
+
+  const fn __enter__(slf: Py<Self>) -> Py<Self> {
+    slf
+  }
+
+  fn __exit__(
+    &self,
+    _exc_type: Option<&Bound<'_, PyAny>>,
+    _exc_value: Option<&Bound<'_, PyAny>>,
+    _traceback: Option<&Bound<'_, PyAny>>,
+  ) {
+    self.close();
+  }
+
+  /// This frame's properties.
+  #[getter]
+  fn props(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    let frame = self.frame()?;
+    frame.0.properties().map_or_else(
+      || Ok(PyDict::new(py).unbind()),
+      |map| map_to_py_dict(py, &map, &self.owner),
+    )
+  }
+
+  /// Returns a pointer to the raw frame data. The data may not be modified.
+  fn get_read_ptr(&self, plane: i32) -> PyResult<usize> {
+    let frame = self.frame()?;
+    if plane < 0 || plane >= frame.0.get_video_format().num_planes {
+      return Err(PyIndexError::new_err("Specified plane index out of range"));
+    }
+    Ok(frame.0.plane(plane) as usize)
+  }
+
+  /// Returns a pointer to the raw frame data. It may be modified.
+  fn get_write_ptr(&self, plane: i32) -> PyResult<usize> {
+    if self.readonly {
+      return Err(PyRuntimeError::new_err(
+        "Can only obtain write pointer for writable frames",
+      ));
+    }
+    let frame = self.frame()?;
+    if plane < 0 || plane >= frame.0.get_video_format().num_planes {
+      return Err(PyIndexError::new_err("Specified plane index out of range"));
+    }
+    // SAFETY: writable frames are created by `copyFrame`. VapourSynth owns the
+    // allocation and keeps it valid through `frame`.
+    Ok(unsafe { (frame.0.api().getWritePtr)(frame.0.as_ptr(), plane) } as usize)
+  }
+
+  /// Returns the stride between lines in a plane.
+  fn get_stride(&self, plane: i32) -> PyResult<isize> {
+    let frame = self.frame()?;
+    if plane < 0 || plane >= frame.0.get_video_format().num_planes {
+      return Err(PyIndexError::new_err("Specified plane index out of range"));
+    }
+    Ok(frame.0.stride(plane))
+  }
+
+  /// Returns a writable copy of the frame.
+  #[allow(clippy::unused_self)]
+  fn copy(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
+    Err(PyNotImplementedError::new_err(()))
+  }
+
+  #[allow(clippy::unused_self)]
+  fn __getitem__(&self, _index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    Err(PyNotImplementedError::new_err(()))
+  }
+
+  #[allow(clippy::unused_self)]
+  fn __len__(&self) -> PyResult<usize> {
+    Err(PyNotImplementedError::new_err(()))
+  }
+}
+
+/// Represents a video frame and all metadata attached to it.
+#[pyclass(name = "VideoFrame", module = "rynth", frozen, extends = PyRawFrame)]
+pub(crate) struct PyVideoFrame {
   format: OnceLock<Py<PyVideoFormat>>,
 }
 
 impl PyVideoFrame {
-  pub(crate) fn new(frame: VideoFrame, owner: Arc<OwnerCell>) -> Self {
-    Self {
-      frame: Arc::new(FrameCell(frame)),
-      owner,
+  pub(crate) fn new(frame: VideoFrame, owner: Arc<OwnerCell>) -> PyClassInitializer<Self> {
+    PyClassInitializer::from(PyRawFrame::new(frame, owner, true)).add_subclass(Self {
       format: OnceLock::new(),
-    }
+    })
+  }
+
+  fn frame(slf: &PyRef<'_, Self>) -> PyResult<Arc<FrameCell>> {
+    slf.as_super().frame()
+  }
+
+  pub(crate) fn create(
+    py: Python<'_>,
+    frame: VideoFrame,
+    owner: Arc<OwnerCell>,
+  ) -> PyResult<Py<Self>> {
+    Py::new(py, Self::new(frame, owner))
   }
 }
 
@@ -44,43 +171,46 @@ impl PyVideoFrame {
 impl PyVideoFrame {
   /// The width of the frame.
   #[getter]
-  fn width(&self) -> i32 {
-    self.frame.0.frame_width(0)
+  #[allow(clippy::needless_pass_by_value)]
+  fn width(slf: PyRef<'_, Self>) -> PyResult<i32> {
+    Ok(Self::frame(&slf)?.0.frame_width(0))
   }
 
   /// The height of the frame.
   #[getter]
-  fn height(&self) -> i32 {
-    self.frame.0.frame_height(0)
-  }
-
-  /// This attribute holds all the frame's properties as a dict.
-  #[getter]
-  fn props(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-    self.frame.0.properties().map_or_else(
-      || Ok(PyDict::new(py).unbind()),
-      |map| map_to_py_dict(py, &map, &self.owner),
-    )
+  #[allow(clippy::needless_pass_by_value)]
+  fn height(slf: PyRef<'_, Self>) -> PyResult<i32> {
+    Ok(Self::frame(&slf)?.0.frame_height(0))
   }
 
   /// The frame's video format. Built once from the core and shared thereafter.
   #[getter]
-  fn format(&self, py: Python<'_>) -> PyResult<Py<PyVideoFormat>> {
-    if let Some(format) = self.format.get() {
+  #[allow(clippy::needless_pass_by_value)]
+  fn format(slf: PyRef<'_, Self>, py: Python<'_>) -> PyResult<Py<PyVideoFormat>> {
+    if let Some(format) = slf.format.get() {
       return Ok(format.clone_ref(py));
     }
+    let frame = Self::frame(&slf)?;
     let format = Py::new(
       py,
-      PyVideoFormat::from_vs(self.frame.0.get_video_format(), &self.owner),
+      PyVideoFormat::from_vs(frame.0.get_video_format(), &slf.as_super().owner),
     )?;
-    Ok(self.format.get_or_init(|| format).clone_ref(py))
+    Ok(slf.format.get_or_init(|| format).clone_ref(py))
   }
 
   /// Zero-copy plane accessor. `frame[plane_idx]` returns a read-only
   /// `memoryview` over the whole plane.
-  fn __getitem__(&self, py: Python<'_>, index: i32) -> PyResult<Py<PyMemoryView>> {
-    let frame = &self.frame.0;
-    let format = frame.get_video_format();
+  #[allow(clippy::needless_pass_by_value)]
+  fn __getitem__(
+    slf: PyRef<'_, Self>,
+    py: Python<'_>,
+    mut index: i32,
+  ) -> PyResult<Py<PyMemoryView>> {
+    let frame = Self::frame(&slf)?;
+    let format = frame.0.get_video_format();
+    if index < 0 {
+      index += format.num_planes;
+    }
     if index < 0 || index >= format.num_planes {
       return Err(PyIndexError::new_err("index out of range"));
     }
@@ -99,13 +229,13 @@ impl PyVideoFrame {
     let plane = Bound::new(
       py,
       PyPlane {
-        _frame: self.frame.clone(),
-        data: frame.plane(index),
+        _frame: frame.clone(),
+        data: frame.0.plane(index),
         shape: [
-          frame.frame_height(index) as isize,
-          frame.frame_width(index) as isize,
+          frame.0.frame_height(index) as isize,
+          frame.0.frame_width(index) as isize,
         ],
-        strides: [frame.stride(index), itemsize],
+        strides: [frame.0.stride(index), itemsize],
         itemsize,
         format: fmt.into(),
       },
@@ -114,24 +244,43 @@ impl PyVideoFrame {
   }
 
   /// The number of planes, so the frame acts as a sequence of planes.
-  fn __len__(&self) -> usize {
-    self.frame.0.get_video_format().num_planes as usize
+  #[allow(clippy::needless_pass_by_value)]
+  fn __len__(slf: PyRef<'_, Self>) -> PyResult<usize> {
+    Ok(Self::frame(&slf)?.0.get_video_format().num_planes as usize)
   }
 
-  fn __repr__(slf: &Bound<'_, Self>) -> String {
-    let this = slf.get();
+  /// Returns a writable copy of the frame.
+  #[allow(clippy::needless_pass_by_value)]
+  fn copy(slf: PyRef<'_, Self>, py: Python<'_>) -> PyResult<Py<Self>> {
+    let frame = Self::frame(&slf)?;
+    let owner = slf.as_super().owner.clone();
+    let copy = owner.with_core(|core| core.copy_frame(&frame.0));
+    Py::new(
+      py,
+      PyClassInitializer::from(PyRawFrame::new(copy, owner, false)).add_subclass(Self {
+        format: OnceLock::new(),
+      }),
+    )
+  }
+
+  #[allow(clippy::needless_pass_by_value)]
+  fn __repr__(slf: PyRef<'_, Self>) -> String {
     let address = slf.as_ptr() as usize;
-    let format = this.format(slf.py()).map_or_else(
-      |_| "dynamic".to_owned(),
+    let readonly = slf.as_super().readonly;
+    let Ok(frame) = Self::frame(&slf) else {
+      return format!("<rynth.VideoFrame object at 0x{address:016X} closed=True>");
+    };
+    let format = slf.format.get().map_or_else(
+      || "dynamic".to_owned(),
       |f| f.bind(slf.py()).get().name.clone(),
     );
-    let (width, height) = match (this.width(), this.height()) {
+    let (width, height) = match (frame.0.frame_width(0), frame.0.frame_height(0)) {
       (w, h) if w != 0 && h != 0 => (w.to_string(), h.to_string()),
       _ => ("dynamic".to_owned(), "dynamic".to_owned()),
     };
     format!(
       "<rynth.VideoFrame object at 0x{address:016X} \
-       format={format}, width={width}, height={height}, readonly=True>"
+       format={format}, width={width}, height={height}, readonly={readonly}>"
     )
   }
 }
