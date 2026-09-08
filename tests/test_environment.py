@@ -120,6 +120,45 @@ def test_default_environment_is_single() -> None:
     assert repr(env) == "<Environment (default)>"
 
 
+def test_environment_data_is_opaque_and_weak_referenceable() -> None:
+    import gc
+    import weakref
+
+    class Policy(rynth.EnvironmentPolicy):
+        def on_policy_registered(self, api):
+            self.api = api
+
+        def get_current_environment(self):
+            return None
+
+        def set_environment(self, environment):
+            return environment
+
+    policy = Policy()
+    rynth.register_policy(policy)
+    data = policy.api.create_environment()
+
+    assert type(data) is rynth.EnvironmentData
+    with pytest.raises(TypeError):
+        rynth.EnvironmentData()
+    with pytest.raises(AttributeError):
+        _ = data.alive
+
+    finalized = False
+
+    def on_finalize(_reference):
+        nonlocal finalized
+        finalized = True
+
+    reference = weakref.ref(data, on_finalize)
+    policy.api.destroy_environment(data)
+    del data
+    gc.collect()
+
+    assert reference() is None
+    assert finalized
+
+
 def test_register_policy_twice_raises() -> None:
     class NoopPolicy(rynth.EnvironmentPolicy):
         def get_current_environment(self):
