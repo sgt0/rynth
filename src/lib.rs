@@ -24,8 +24,8 @@ mod rynth {
   use crate::enums::{ColorFamily, SampleType};
   #[pymodule_export]
   use crate::environment::{
-    Environment, EnvironmentPolicy, EnvironmentPolicyAPI, StandaloneEnvironmentPolicy,
-    VideoOutputTuple,
+    Environment, EnvironmentData, EnvironmentPolicy, EnvironmentPolicyAPI,
+    StandaloneEnvironmentPolicy, VideoOutputTuple,
   };
   #[pymodule_export]
   use crate::environment::{

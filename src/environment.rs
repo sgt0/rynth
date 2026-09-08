@@ -81,8 +81,8 @@ impl VideoOutputTuple {
   }
 }
 
-/// Opaque per-environment state.
-#[pyclass(frozen, name = "EnvironmentData", module = "rynth")]
+/// Opaque context-sensitive state used by environment policies.
+#[pyclass(frozen, weakref, name = "EnvironmentData", module = "rynth")]
 pub(crate) struct EnvironmentData {
   alive: AtomicBool,
   #[allow(dead_code)]
@@ -120,14 +120,6 @@ impl EnvironmentData {
     self.outputs.lock().clear();
     // Drop this environment's reference to the core.
     let _ = self.core.lock().take();
-  }
-}
-
-#[pymethods]
-impl EnvironmentData {
-  #[getter]
-  fn alive(&self) -> bool {
-    self.alive.load(Ordering::SeqCst)
   }
 }
 
@@ -244,8 +236,12 @@ impl EnvironmentPolicyAPI {
     Ok(env)
   }
 
-  #[allow(clippy::unused_self, clippy::needless_pass_by_value)]
+  #[allow(clippy::needless_pass_by_value)]
   fn destroy_environment(&self, environment: Py<EnvironmentData>) {
+    self
+      .known
+      .lock()
+      .retain(|known| known.as_ptr() != environment.as_ptr());
     environment.get().destroy();
   }
 
