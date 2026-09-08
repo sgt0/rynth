@@ -1,9 +1,40 @@
+from collections.abc import Generator
+from typing import override
+from weakref import ReferenceType
+
 import pytest
 import rynth
 
 
+class _Policy(rynth.EnvironmentPolicy):
+    api: rynth.EnvironmentPolicyAPI
+    current: rynth.EnvironmentData | None
+
+    def __init__(self) -> None:
+        self.current = None
+
+    @override
+    def on_policy_registered(self, api: rynth.EnvironmentPolicyAPI) -> None:
+        self.api = api
+
+    @override
+    def get_current_environment(self) -> rynth.EnvironmentData | None:
+        return self.current
+
+    @override
+    def set_environment(
+        self, environment: rynth.EnvironmentData | None
+    ) -> rynth.EnvironmentData | None:
+        previous = self.current
+        self.current = environment
+        return previous
+
+    def new_environment(self) -> rynth.EnvironmentData:
+        return self.api.create_environment()
+
+
 @pytest.fixture(autouse=True)
-def _fresh_policy():
+def _fresh_policy() -> Generator[None, None, None]:
     rynth.clear_policy()
     yield
     rynth.clear_policy()
@@ -124,17 +155,7 @@ def test_environment_data_is_opaque_and_weak_referenceable() -> None:
     import gc
     import weakref
 
-    class Policy(rynth.EnvironmentPolicy):
-        def on_policy_registered(self, api):
-            self.api = api
-
-        def get_current_environment(self):
-            return None
-
-        def set_environment(self, environment):
-            return environment
-
-    policy = Policy()
+    policy = _Policy()
     rynth.register_policy(policy)
     data = policy.api.create_environment()
 
@@ -142,15 +163,15 @@ def test_environment_data_is_opaque_and_weak_referenceable() -> None:
     with pytest.raises(TypeError):
         rynth.EnvironmentData()
     with pytest.raises(AttributeError):
-        _ = data.alive
+        _ = data.alive  # type: ignore[attr-defined]
 
     finalized = False
 
-    def on_finalize(_reference):
+    def on_finalize(_reference: ReferenceType[rynth.EnvironmentData]) -> None:
         nonlocal finalized
         finalized = True
 
-    reference = weakref.ref(data, on_finalize)
+    reference: ReferenceType[rynth.EnvironmentData] = weakref.ref(data, on_finalize)
     policy.api.destroy_environment(data)
     del data
     gc.collect()
@@ -159,37 +180,84 @@ def test_environment_data_is_opaque_and_weak_referenceable() -> None:
     assert finalized
 
 
+def test_wrap_environment_returns_handle_for_same_data() -> None:
+    policy = _Policy()
+    rynth.register_policy(policy)
+    data = policy.api.create_environment()
+    environment = policy.api.wrap_environment(data)
+
+    assert type(environment) is rynth.Environment
+    assert environment.alive
+    assert not environment.active
+
+    with environment.use():
+        assert policy.current is data
+        assert environment.active
+        assert rynth.get_current_environment() == environment
+
+    assert policy.current is None
+    assert not environment.active
+
+
+def test_wrap_environment_does_not_check_liveness() -> None:
+    policy = _Policy()
+    rynth.register_policy(policy)
+    data = policy.api.create_environment()
+    policy.api.destroy_environment(data)
+
+    environment = policy.api.wrap_environment(data)
+    assert type(environment) is rynth.Environment
+    assert not environment.alive
+
+
+def test_wrap_environment_rejects_non_environment_data() -> None:
+    policy = _Policy()
+    rynth.register_policy(policy)
+
+    with pytest.raises(TypeError):
+        policy.api.wrap_environment(object())  # type: ignore[arg-type]
+
+
+def test_wrap_environment_rejects_inactive_policy_api() -> None:
+    first = _Policy()
+    rynth.register_policy(first)
+    data = first.api.create_environment()
+    rynth.clear_policy()
+
+    second = _Policy()
+    rynth.register_policy(second)
+    with pytest.raises(ValueError, match="currently activated policy does not match"):
+        first.api.wrap_environment(data)
+
+
+def test_environment_policy_api_does_not_keep_policy_alive() -> None:
+    import gc
+    import weakref
+
+    policy = _Policy()
+    rynth.register_policy(policy)
+    api = policy.api
+    data = policy.api.create_environment()
+    reference: ReferenceType[_Policy] = weakref.ref(policy)
+
+    rynth.clear_policy()
+    del policy
+    gc.collect()
+
+    assert reference() is None
+    with pytest.raises(ValueError, match="currently activated policy does not match"):
+        api.wrap_environment(data)
+
+
 def test_register_policy_twice_raises() -> None:
-    class NoopPolicy(rynth.EnvironmentPolicy):
-        def get_current_environment(self):
-            return None
-
-        def set_environment(self, environment):
-            return environment
-
-    rynth.register_policy(NoopPolicy())
+    rynth.register_policy(_Policy())
     assert rynth.has_policy()
     with pytest.raises(RuntimeError, match="already a policy"):
-        rynth.register_policy(NoopPolicy())
+        rynth.register_policy(_Policy())
 
 
 def test_custom_policy_isolates_environments() -> None:
-    class MultiPolicy(rynth.EnvironmentPolicy):
-        def on_policy_registered(self, api):
-            self.api = api
-            self.current = None
-
-        def get_current_environment(self):
-            return self.current
-
-        def set_environment(self, environment):
-            self.current = environment
-            return environment
-
-        def new_environment(self):
-            return self.api.create_environment()
-
-    policy = MultiPolicy()
+    policy = _Policy()
     rynth.register_policy(policy)
 
     first = policy.new_environment()
