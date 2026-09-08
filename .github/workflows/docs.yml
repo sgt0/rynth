@@ -31,10 +31,10 @@ jobs:
           python-version: "3.14"
 
       - name: Generate stubs
-        run: ./scripts/generate-stubs.sh
+        run: uv run --locked maturin generate-stubs --out stubs
 
       - name: Build docs
-        run: uv run --frozen zensical build --clean
+        run: uv run --locked zensical build --clean
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
