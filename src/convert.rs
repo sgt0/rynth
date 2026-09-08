@@ -117,7 +117,7 @@ fn value_to_py(py: Python<'_>, value: Value<'_>, owner: &Arc<OwnerCell>) -> PyRe
       },
     )?
     .into_any(),
-    Value::VideoFrame(frame) => Py::new(py, PyVideoFrame::new(frame, owner.clone()))?.into_any(),
+    Value::VideoFrame(frame) => PyVideoFrame::create(py, frame, owner.clone())?.into_any(),
     Value::AudioNode(_) | Value::AudioFrame(_) => {
       return Err(PyRuntimeError::new_err(
         "audio values are not supported yet",
