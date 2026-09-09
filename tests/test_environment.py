@@ -140,7 +140,8 @@ def test_set_output_rejects_non_gray_alpha() -> None:
 def test_set_output_accepts_matching_gray_alpha() -> None:
     main = rynth.core.std.BlankClip(width=64, height=64, length=3)
     alpha = rynth.core.std.ShufflePlanes(clips=main, planes=0, colorfamily=1)
-    assert alpha.format_name == "Gray8"
+    assert alpha.format is not None
+    assert alpha.format.name == "Gray8"
 
     main.set_output(0, alpha=alpha)
     out = rynth.get_output(0)

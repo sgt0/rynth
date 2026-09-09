@@ -17,7 +17,7 @@ use vapoursynth4_rs::node::{AudioNode, FrameRequest, Node, VideoNode};
 use crate::core::OwnerCell;
 use crate::enums::SampleType;
 use crate::environment;
-use crate::frame::{PyAudioFrame, PyVideoFrame};
+use crate::frame::{PyAudioFrame, PyVideoFormat, PyVideoFrame};
 
 /// Represents a video clip.
 #[pyclass(name = "VideoNode", frozen)]
@@ -56,13 +56,15 @@ impl PyVideoNode {
     Ratio::new_raw(info.fps_num, info.fps_den)
   }
 
+  /// A `VideoFormat` describing the clip's frame data. `None` when the format
+  /// can change between frames.
   #[getter]
-  fn format_name(&self) -> Option<String> {
+  fn format(&self, py: Python<'_>) -> PyResult<Option<Py<PyVideoFormat>>> {
     let format = &self.node.info().format;
-    self
-      .owner
-      .with_core(|core| core.get_video_format_name(format))
-      .map(crate::frame::trim_format_name)
+    if format.color_family == ColorFamily::Undefined {
+      return Ok(None);
+    }
+    Py::new(py, PyVideoFormat::from_vs(format, &self.owner)).map(Some)
   }
 
   fn __len__(&self) -> usize {

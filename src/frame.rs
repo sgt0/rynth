@@ -495,8 +495,8 @@ pub(crate) struct PyVideoFormat {
 
 impl PyVideoFormat {
   /// Builds the format from a raw `VSVideoFormat`, resolving the name and id
-  /// through the core exactly once, like Cython's `createVideoFormat`.
-  fn from_vs(format: &VideoFormat, owner: &OwnerCell) -> Self {
+  /// through the core exactly once.
+  pub(crate) fn from_vs(format: &VideoFormat, owner: &OwnerCell) -> Self {
     let name = owner
       .with_core(|core| core.get_video_format_name(format))
       .map_or_else(|| "None".to_owned(), trim_format_name);
