@@ -50,7 +50,7 @@ impl From<VsColorFamily> for ColorFamily {
   name = "SampleType",
   module = "rynth"
 )]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SampleType {
   /// Integer.
   #[pyo3(name = "INTEGER")]

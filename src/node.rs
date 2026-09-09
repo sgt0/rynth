@@ -7,16 +7,17 @@ use std::sync::{Arc, LazyLock};
 use async_executor::Executor;
 use num_rational::Ratio;
 use parking_lot::Mutex;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyStopIteration, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PySlice, PySliceMethods};
 use vapoursynth4_rs::ColorFamily;
-use vapoursynth4_rs::frame::VideoFrame;
-use vapoursynth4_rs::node::{FrameRequest, Node, VideoNode};
+use vapoursynth4_rs::frame::{AudioFrame, VideoFrame};
+use vapoursynth4_rs::node::{AudioNode, FrameRequest, Node, VideoNode};
 
 use crate::core::OwnerCell;
+use crate::enums::SampleType;
 use crate::environment;
-use crate::frame::PyVideoFrame;
+use crate::frame::{PyAudioFrame, PyVideoFrame};
 
 /// Represents a video clip.
 #[pyclass(name = "VideoNode", frozen)]
@@ -94,34 +95,16 @@ impl PyVideoNode {
   /// the core's thread count. `backlog` is how many unconsumed frames may be
   /// buffered ahead of the consumer, defaulting to `prefetch * 3`.
   #[pyo3(signature = (prefetch=None, backlog=None))]
-  fn frames(&self, prefetch: Option<i32>, backlog: Option<i32>) -> PyFrameIter {
-    let prefetch = match prefetch {
-      Some(p) if p > 0 => p as usize,
-      _ => self
-        .owner
-        .with_core(|core| core.get_info().num_threads)
-        .max(1) as usize,
-    };
-    let backlog = match backlog {
-      Some(b) if b >= 0 => (b as usize).max(prefetch),
-      _ => prefetch * 3,
-    };
-
-    let iter = PyFrameIter {
-      node: self.node.clone(),
-      owner: self.owner.clone(),
-      len: self.node.info().num_frames,
-      prefetch,
-      backlog,
-      state: Mutex::new(IterState {
-        window: VecDeque::new(),
-        next_request: 0,
-        stopped: false,
-      }),
-    };
-    // Kick off the initial burst of requests.
-    iter.refill(&mut iter.state.lock());
-    iter
+  fn frames(&self, prefetch: Option<i32>, backlog: Option<i32>) -> PyVideoFrameIter {
+    PyVideoFrameIter {
+      core: FrameIterCore::new(
+        NodeKind::Video(self.node.clone()),
+        self.owner.clone(),
+        self.node.info().num_frames,
+        prefetch,
+        backlog,
+      ),
+    }
   }
 
   /// Registers this clip as an output on the current environment.
@@ -288,6 +271,116 @@ impl PyVideoNode {
   }
 }
 
+/// Represents an audio clip.
+#[pyclass(name = "AudioNode", frozen)]
+pub(crate) struct PyAudioNode {
+  pub(crate) node: AudioNode,
+  pub(crate) owner: Arc<OwnerCell>,
+}
+
+#[pymethods]
+impl PyAudioNode {
+  /// Whether the samples are integers or floats.
+  #[getter]
+  fn sample_type(&self) -> SampleType {
+    self.node.info().format.sample_type.into()
+  }
+
+  /// Number of significant bits per sample.
+  #[getter]
+  fn bits_per_sample(&self) -> i32 {
+    self.node.info().format.bits_per_sample
+  }
+
+  /// Number of bytes needed to store one sample.
+  #[getter]
+  fn bytes_per_sample(&self) -> i32 {
+    self.node.info().format.bytes_per_sample
+  }
+
+  /// Bitmask of the channels present in the clip.
+  #[getter]
+  fn channel_layout(&self) -> u64 {
+    self.node.info().format.channel_layout
+  }
+
+  /// Number of audio channels.
+  #[getter]
+  fn num_channels(&self) -> i32 {
+    self.node.info().format.num_channels
+  }
+
+  /// The sample rate in Hz.
+  #[getter]
+  fn sample_rate(&self) -> i32 {
+    self.node.info().sample_rate
+  }
+
+  /// Length of the clip in audio samples.
+  #[getter]
+  fn num_samples(&self) -> i64 {
+    self.node.info().num_samples
+  }
+
+  /// Length of the clip in audio frames.
+  #[getter]
+  fn num_frames(&self) -> i32 {
+    self.node.info().num_frames
+  }
+
+  fn __len__(&self) -> usize {
+    self.node.info().num_frames.max(0) as usize
+  }
+
+  /// Returns an `AudioFrame` from position n.
+  fn get_frame(&self, py: Python<'_>, n: i32) -> PyResult<Py<PyAudioFrame>> {
+    let node = &self.node;
+    let frame = py
+      .detach(|| node.get_frame(n))
+      .map_err(|e| PyRuntimeError::new_err(e.to_string_lossy().into_owned()))?;
+    PyAudioFrame::create(py, frame, self.owner.clone())
+  }
+
+  /// Renders frame `n` concurrently in the core's thread pool. Returns a
+  /// coroutine resolving to the `AudioFrame`.
+  async fn get_frame_async(&self, n: i32) -> PyResult<Py<PyAudioFrame>> {
+    let frame = FRAME_EXECUTOR
+      .spawn(self.node.get_frame_async(n))
+      .await
+      .map_err(|e| PyRuntimeError::new_err(e.to_string_lossy().into_owned()))?;
+    Python::attach(|py| PyAudioFrame::create(py, frame, self.owner.clone()))
+  }
+
+  /// Returns a generator iterator of all `AudioFrame`s in the clip. It will
+  /// render multiple frames concurrently.
+  #[pyo3(signature = (prefetch=None, backlog=None))]
+  fn frames(&self, prefetch: Option<i32>, backlog: Option<i32>) -> PyAudioFrameIter {
+    PyAudioFrameIter {
+      core: FrameIterCore::new(
+        NodeKind::Audio(self.node.clone()),
+        self.owner.clone(),
+        self.node.info().num_frames,
+        prefetch,
+        backlog,
+      ),
+    }
+  }
+
+  /// Registers this clip as an output on the current environment.
+  #[pyo3(signature = (index = 0))]
+  fn set_output(slf: Py<Self>, py: Python<'_>, index: i32) -> PyResult<()> {
+    environment::store_audio_output(py, index, slf)
+  }
+
+  fn __repr__(&self) -> String {
+    let info = self.node.info();
+    format!(
+      "<rynth.AudioNode {} Hz, {} channels, {} samples>",
+      info.sample_rate, info.format.num_channels, info.num_samples
+    )
+  }
+}
+
 /// The shared executor that drives async frame requests.
 static FRAME_EXECUTOR: LazyLock<Arc<Executor<'static>>> = LazyLock::new(|| {
   let executor = Arc::new(Executor::new());
@@ -299,10 +392,44 @@ static FRAME_EXECUTOR: LazyLock<Arc<Executor<'static>>> = LazyLock::new(|| {
   executor
 });
 
+/// A node whose frames the iterator renders.
+enum NodeKind {
+  Video(VideoNode),
+  Audio(AudioNode),
+}
+
+/// An in-flight request for a frame.
+enum FrameReq {
+  Video(FrameRequest<VideoFrame>),
+  Audio(FrameRequest<AudioFrame>),
+}
+
+/// A rendered frame.
+enum FrameOut {
+  Video(VideoFrame),
+  Audio(AudioFrame),
+}
+
+impl FrameReq {
+  fn try_recv(&mut self) -> Option<Result<FrameOut, CString>> {
+    match self {
+      Self::Video(req) => req.try_recv().map(|r| r.map(FrameOut::Video)),
+      Self::Audio(req) => req.try_recv().map(|r| r.map(FrameOut::Audio)),
+    }
+  }
+
+  fn recv_blocking(self) -> Result<FrameOut, CString> {
+    match self {
+      Self::Video(req) => req.recv_blocking().map(FrameOut::Video),
+      Self::Audio(req) => req.recv_blocking().map(FrameOut::Audio),
+    }
+  }
+}
+
 /// An in-flight or completed frame request.
 enum Slot {
-  Rendering(FrameRequest<VideoFrame>),
-  Done(Result<VideoFrame, CString>),
+  Rendering(FrameReq),
+  Done(Result<FrameOut, CString>),
 }
 
 struct IterState {
@@ -316,9 +443,8 @@ struct IterState {
 
 /// Frame iterator that keeps up to `prefetch` frames rendering concurrently
 /// while never buffering more than `backlog` unconsumed frames.
-#[pyclass(name = "FrameIter", frozen)]
-pub(crate) struct PyFrameIter {
-  node: VideoNode,
+struct FrameIterCore {
+  node: NodeKind,
   owner: Arc<OwnerCell>,
   len: i32,
   prefetch: usize,
@@ -326,7 +452,39 @@ pub(crate) struct PyFrameIter {
   state: Mutex<IterState>,
 }
 
-impl PyFrameIter {
+impl FrameIterCore {
+  fn new(
+    node: NodeKind,
+    owner: Arc<OwnerCell>,
+    len: i32,
+    prefetch: Option<i32>,
+    backlog: Option<i32>,
+  ) -> Self {
+    let prefetch = match prefetch {
+      Some(p) if p > 0 => p as usize,
+      _ => owner.with_core(|core| core.get_info().num_threads).max(1) as usize,
+    };
+    let backlog = match backlog {
+      Some(b) if b >= 0 => (b as usize).max(prefetch),
+      _ => prefetch * 3,
+    };
+    let core = Self {
+      node,
+      owner,
+      len,
+      prefetch,
+      backlog,
+      state: Mutex::new(IterState {
+        window: VecDeque::new(),
+        next_request: 0,
+        stopped: false,
+      }),
+    };
+    // Kick off the initial burst of requests.
+    core.refill(&mut core.state.lock());
+    core
+  }
+
   /// Issue new requests while below the concurrency and backlog limits.
   fn refill(&self, st: &mut IterState) {
     if st.stopped {
@@ -352,23 +510,20 @@ impl PyFrameIter {
       && rendering < self.prefetch
       && st.window.len() < self.backlog
     {
-      let req = self.node.get_frame_async(st.next_request);
+      let req = match &self.node {
+        NodeKind::Video(node) => FrameReq::Video(node.get_frame_async(st.next_request)),
+        NodeKind::Audio(node) => FrameReq::Audio(node.get_frame_async(st.next_request)),
+      };
       st.next_request += 1;
       st.window.push_back(Slot::Rendering(req));
       rendering += 1;
     }
   }
-}
 
-#[pymethods]
-impl PyFrameIter {
-  const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-    slf
-  }
-
-  fn __next__(&self, py: Python<'_>) -> PyResult<Option<Py<PyVideoFrame>>> {
-    // Block (without the GIL) until the next frame in order is rendered.
-    let frame = py.detach(|| {
+  /// Blocks (without the GIL) until the next frame in order is rendered.
+  /// `None` signals exhaustion.
+  fn next(&self, py: Python<'_>) -> PyResult<Option<FrameOut>> {
+    py.detach(|| {
       let mut st = self.state.lock();
       let Some(slot) = st.window.pop_front() else {
         return Ok(None);
@@ -389,12 +544,14 @@ impl PyFrameIter {
           Err(msg.to_string_lossy().into_owned())
         }
       }
-    });
+    })
+    .map_err(PyRuntimeError::new_err)
+  }
+}
 
-    frame
-      .map_err(PyRuntimeError::new_err)?
-      .map(|frame| PyVideoFrame::create(py, frame, self.owner.clone()))
-      .transpose()
+impl Drop for FrameIterCore {
+  fn drop(&mut self) {
+    drain(&mut self.state.get_mut().window);
   }
 }
 
@@ -411,8 +568,46 @@ fn drain(window: &mut VecDeque<Slot>) {
   }
 }
 
-impl Drop for PyFrameIter {
-  fn drop(&mut self) {
-    drain(&mut self.state.get_mut().window);
+/// Iterator over a video clip's frames, yielding `VideoFrame`s in order and
+/// rendering multiple frames concurrently.
+#[pyclass(name = "VideoFrameIter", frozen)]
+pub(crate) struct PyVideoFrameIter {
+  core: FrameIterCore,
+}
+
+#[pymethods]
+impl PyVideoFrameIter {
+  const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    slf
+  }
+
+  fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyVideoFrame>> {
+    match self.core.next(py)? {
+      Some(FrameOut::Video(frame)) => PyVideoFrame::create(py, frame, self.core.owner.clone()),
+      Some(FrameOut::Audio(_)) => unreachable!("video iterator only renders video frames"),
+      None => Err(PyStopIteration::new_err(())),
+    }
+  }
+}
+
+/// Iterator over an audio clip's frames, yielding `AudioFrame`s in order and
+/// rendering multiple frames concurrently.
+#[pyclass(name = "AudioFrameIter", frozen)]
+pub(crate) struct PyAudioFrameIter {
+  core: FrameIterCore,
+}
+
+#[pymethods]
+impl PyAudioFrameIter {
+  const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    slf
+  }
+
+  fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAudioFrame>> {
+    match self.core.next(py)? {
+      Some(FrameOut::Audio(frame)) => PyAudioFrame::create(py, frame, self.core.owner.clone()),
+      Some(FrameOut::Video(_)) => unreachable!("audio iterator only renders audio frames"),
+      None => Err(PyStopIteration::new_err(())),
+    }
   }
 }

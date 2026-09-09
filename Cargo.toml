@@ -39,7 +39,7 @@ pyo3 = {
 }
 vapoursynth4-rs = {
     git = "https://github.com/sgt0/vapoursynth4-rs",
-    rev = "f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac"
+    rev = "b0ec52f56a9251d5103d768a1d0d36fc0ea74651"
 }
 
 [lints.rust]

@@ -642,8 +642,8 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "vapoursynth4-rs"
-version = "0.4.0"
-source = "git+https://github.com/sgt0/vapoursynth4-rs?rev=f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac#f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac"
+version = "0.5.1"
+source = "git+https://github.com/sgt0/vapoursynth4-rs?rev=b0ec52f56a9251d5103d768a1d0d36fc0ea74651#b0ec52f56a9251d5103d768a1d0d36fc0ea74651"
 dependencies = [
  "async-channel",
  "bon",
@@ -654,8 +654,8 @@ dependencies = [
 
 [[package]]
 name = "vapoursynth4-sys"
-version = "0.3.2+R73"
-source = "git+https://github.com/sgt0/vapoursynth4-rs?rev=f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac#f88492e0afb6a6eeedb4ba1f5c16dccc178aa4ac"
+version = "0.4.1+R79"
+source = "git+https://github.com/sgt0/vapoursynth4-rs?rev=b0ec52f56a9251d5103d768a1d0d36fc0ea74651#b0ec52f56a9251d5103d768a1d0d36fc0ea74651"
 
 [[package]]
 name = "wasm-bindgen"

@@ -45,6 +45,7 @@ def test_set_output_registers_clip() -> None:
     clip.set_output(0)
 
     out = rynth.get_output(0)
+    assert isinstance(out, rynth.VideoOutputTuple)
     assert out.clip is clip
     assert out.alpha is None
     assert out.alt_output == 0
@@ -55,6 +56,7 @@ def test_video_output_tuple_is_tuple_like() -> None:
     clip.set_output(0, alt_output=2)
 
     out = rynth.get_output(0)
+    assert isinstance(out, rynth.VideoOutputTuple)
     assert len(out) == 3
     assert out[0] is clip
     assert out[1] is None
@@ -75,8 +77,12 @@ def test_set_output_uses_given_index() -> None:
     a.set_output(0)
     b.set_output(5)
 
-    assert rynth.get_output(0).clip is a
-    assert rynth.get_output(5).clip is b
+    a_out = rynth.get_output(0)
+    b_out = rynth.get_output(5)
+    assert isinstance(a_out, rynth.VideoOutputTuple)
+    assert isinstance(b_out, rynth.VideoOutputTuple)
+    assert a_out.clip is a
+    assert b_out.clip is b
 
 
 def test_get_output_missing_raises_key_error() -> None:
@@ -138,6 +144,7 @@ def test_set_output_accepts_matching_gray_alpha() -> None:
 
     main.set_output(0, alpha=alpha)
     out = rynth.get_output(0)
+    assert isinstance(out, rynth.VideoOutputTuple)
     assert out.clip is main
     assert out.alpha is alpha
 
