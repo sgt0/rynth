@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
 use crate::core::PyCore;
-use crate::node::PyVideoNode;
+use crate::node::{PyAudioNode, PyVideoNode};
 
 /// The currently registered policy, if any.
 static POLICY: Mutex<Option<Py<PyAny>>> = Mutex::new(None);
@@ -81,6 +81,26 @@ impl VideoOutputTuple {
   }
 }
 
+/// A registered output.
+#[derive(IntoPyObject)]
+pub(crate) enum Output {
+  Video(Py<VideoOutputTuple>),
+  Audio(Py<PyAudioNode>),
+}
+
+impl Output {
+  /// Makes a clone of self.
+  ///
+  /// This creates another pointer to the same object, increasing its reference
+  /// count.
+  fn clone_ref(&self, py: Python<'_>) -> Self {
+    match self {
+      Self::Video(o) => Self::Video(o.clone_ref(py)),
+      Self::Audio(o) => Self::Audio(o.clone_ref(py)),
+    }
+  }
+}
+
 /// Opaque context-sensitive state used by environment policies.
 #[pyclass(frozen, weakref, name = "EnvironmentData", module = "rynth")]
 pub(crate) struct EnvironmentData {
@@ -88,7 +108,7 @@ pub(crate) struct EnvironmentData {
   #[allow(dead_code)]
   flags: i32,
   core: Mutex<Option<Py<PyCore>>>,
-  outputs: Mutex<BTreeMap<i32, Py<VideoOutputTuple>>>,
+  outputs: Mutex<BTreeMap<i32, Output>>,
 }
 
 impl EnvironmentData {
@@ -519,7 +539,21 @@ pub(crate) fn store_video_output(
     .get()
     .outputs
     .lock()
-    .insert(index, tuple);
+    .insert(index, Output::Video(tuple));
+  Ok(())
+}
+
+/// Stores an audio output in the current environment's registry.
+pub(crate) fn store_audio_output(
+  py: Python<'_>,
+  index: i32,
+  clip: Py<PyAudioNode>,
+) -> PyResult<()> {
+  require_current_env(py)?
+    .get()
+    .outputs
+    .lock()
+    .insert(index, Output::Audio(clip));
   Ok(())
 }
 
@@ -551,10 +585,10 @@ pub(crate) fn get_current_environment(py: Python<'_>) -> PyResult<Environment> {
   Ok(Environment { env })
 }
 
-/// The [`VideoOutputTuple`] registered at `index`. Raises `KeyError` if none.
+/// The output registered at `index`. Raises `KeyError` if none.
 #[pyfunction]
 #[pyo3(signature = (index = 0))]
-pub(crate) fn get_output(py: Python<'_>, index: i32) -> PyResult<Py<VideoOutputTuple>> {
+pub(crate) fn get_output(py: Python<'_>, index: i32) -> PyResult<Output> {
   let env = require_current_env(py)?;
   let output = env
     .get()

@@ -33,9 +33,9 @@ mod rynth {
     has_policy, register_policy,
   };
   #[pymodule_export]
-  use crate::frame::{PyRawFrame, PyVideoFormat, PyVideoFrame};
+  use crate::frame::{PyAudioFrame, PyRawFrame, PyVideoFormat, PyVideoFrame};
   #[pymodule_export]
-  use crate::node::{PyFrameIter, PyVideoNode};
+  use crate::node::{PyAudioFrameIter, PyAudioNode, PyVideoFrameIter, PyVideoNode};
   #[pymodule_export]
   use crate::plugin::{PyFunction, PyFunctionIter, PyPlugin};
 

@@ -10,8 +10,8 @@ use pyo3::types::{PyDict, PyList};
 use vapoursynth4_rs::map::{AppendMode, KeyStr, Map, Value};
 
 use crate::core::OwnerCell;
-use crate::frame::PyVideoFrame;
-use crate::node::PyVideoNode;
+use crate::frame::{PyAudioFrame, PyVideoFrame};
+use crate::node::{PyAudioNode, PyVideoNode};
 
 pub(crate) fn map_key(name: &str) -> PyResult<CString> {
   if name.is_empty() || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
@@ -118,11 +118,15 @@ fn value_to_py(py: Python<'_>, value: Value<'_>, owner: &Arc<OwnerCell>) -> PyRe
     )?
     .into_any(),
     Value::VideoFrame(frame) => PyVideoFrame::create(py, frame, owner.clone())?.into_any(),
-    Value::AudioNode(_) | Value::AudioFrame(_) => {
-      return Err(PyRuntimeError::new_err(
-        "audio values are not supported yet",
-      ));
-    }
+    Value::AudioNode(node) => Py::new(
+      py,
+      PyAudioNode {
+        node,
+        owner: owner.clone(),
+      },
+    )?
+    .into_any(),
+    Value::AudioFrame(frame) => PyAudioFrame::create(py, frame, owner.clone())?.into_any(),
     Value::Function(_) => {
       return Err(PyRuntimeError::new_err(
         "function values are not supported yet",
