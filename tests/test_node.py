@@ -190,3 +190,18 @@ def test_getitem_slice(core: rynth.Core) -> None:
 
     with pytest.raises(ValueError, match="[Ss]tep cannot be zero"):
         clip[::0]
+
+
+def test_preset_video_format(core: rynth.Core) -> None:
+    assert rynth.RGB24 is rynth.PresetVideoFormat.RGB24
+    assert rynth.RGB24 == (2 << 28) | (8 << 16)
+    assert int(rynth.RGB24) == (2 << 28) | (8 << 16)
+
+    rgb = core.std.BlankClip(width=4, height=4, length=1, format=rynth.RGB24)
+    assert rgb.format is not None
+    assert rgb.format.name == "RGB24"
+
+    yuv = core.std.BlankClip(width=4, height=4, length=1, format=rynth.YUV420P8)
+    assert yuv.format is not None
+    assert yuv.format.name == "YUV420P8"
+    assert (yuv.format.subsampling_w, yuv.format.subsampling_h) == (1, 1)

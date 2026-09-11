@@ -10,6 +10,7 @@ use pyo3::types::{PyDict, PyList};
 use vapoursynth4_rs::map::{AppendMode, KeyStr, Map, Value};
 
 use crate::core::OwnerCell;
+use crate::enums::PresetVideoFormat;
 use crate::frame::{PyAudioFrame, PyVideoFrame};
 use crate::node::{PyAudioNode, PyVideoNode};
 
@@ -46,6 +47,13 @@ fn set_scalar(
 ) -> PyResult<()> {
   let val = if let Ok(b) = value.extract::<bool>() {
     let i = i64::from(b);
+    if want_float {
+      Value::Float(i as f64)
+    } else {
+      Value::Int(i)
+    }
+  } else if let Ok(preset) = value.extract::<PresetVideoFormat>() {
+    let i = preset as i64;
     if want_float {
       Value::Float(i as f64)
     } else {
