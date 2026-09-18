@@ -204,7 +204,7 @@ jobs:
         run: uv publish --trusted-publishing always 'wheels-*/*'
 
   clippy:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -219,7 +219,7 @@ jobs:
         run: cargo clippy
 
   rustfmt:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -234,7 +234,7 @@ jobs:
         uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
 
   cargo-shear:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -248,7 +248,7 @@ jobs:
       - run: cargo shear
 
   ruff-check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -264,7 +264,7 @@ jobs:
         run: uv run --frozen ruff check .
 
   ruff-format:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -280,7 +280,7 @@ jobs:
         run: uv run --frozen ruff format --check .
 
   devenv:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
