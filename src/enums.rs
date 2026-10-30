@@ -5,15 +5,7 @@ use vapoursynth4_rs::ffi::VSPresetVideoFormat as Preset;
 use vapoursynth4_rs::{ColorFamily as VsColorFamily, SampleType as VsSampleType};
 
 /// The color family of a video format.
-#[pyclass(
-  eq,
-  eq_int,
-  frozen,
-  hash,
-  skip_from_py_object,
-  name = "ColorFamily",
-  module = "rynth"
-)]
+#[pyclass(eq, eq_int, frozen, hash, name = "ColorFamily", module = "rynth")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ColorFamily {
   /// UNDEFINED.
@@ -42,15 +34,7 @@ impl From<VsColorFamily> for ColorFamily {
 }
 
 /// The sample type of a video format.
-#[pyclass(
-  eq,
-  eq_int,
-  frozen,
-  hash,
-  skip_from_py_object,
-  name = "SampleType",
-  module = "rynth"
-)]
+#[pyclass(eq, eq_int, frozen, hash, name = "SampleType", module = "rynth")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SampleType {
   /// Integer.
